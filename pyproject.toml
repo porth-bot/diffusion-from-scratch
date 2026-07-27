@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diffusion-from-scratch"
+version = "0.1.0"
+description = "Score-based generative modeling from the score up -- Langevin dynamics, denoising score matching, and reverse-time samplers on 2D targets whose scores are known in closed form"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = ["torch>=2.0", "numpy>=1.24"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "matplotlib>=3.7", "mypy>=1.8"]
+
+[tool.setuptools.packages.find]
+include = ["diffusion*"]
+
+[tool.mypy]
+files = ["diffusion"]
+ignore_missing_imports = true
