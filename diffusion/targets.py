@@ -361,8 +361,6 @@ class GaussianMixture(Mixture):
     well-separated mixture has a covariance far larger than any component's.
     """
 
-    components: list[Gaussian]
-
     def __init__(
         self,
         means: Tensor | Sequence[Sequence[float]],
