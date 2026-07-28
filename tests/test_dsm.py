@@ -17,7 +17,11 @@ import torch
 
 from diffusion.dsm import (
     dsm_loss,
+    eval_dsm_floor,
+    eval_dsm_loss,
     explicit_score_matching_loss,
+    fixed_eval_batch,
+    irreducible_dsm_loss,
     sample_log_uniform_sigmas,
     score_diagnostics,
     train_score_model,
@@ -203,6 +207,85 @@ def test_dsm_loss_rejects_mismatched_shapes():
 
 
 # --------------------------------------------------------------------------
+# the loss floor
+# --------------------------------------------------------------------------
+def test_the_loss_floor_runs_from_d_at_fine_levels_to_zero_at_coarse_ones():
+    """Counterintuitive and worth pinning: the DSM loss is LARGEST at small sigma.
+
+    At ``sigma -> 0`` the noisy point reveals ``x_0`` and says nothing about
+    ``eps``, so nothing can be predicted and the floor is ``E||eps||^2 = d``.
+    At large ``sigma`` the point is almost pure noise, ``eps ~= x/sigma`` is
+    nearly determined, and the floor goes to zero. Read the other way round,
+    a falling training-loss curve would look like progress when it is only
+    the batch drawing coarser levels.
+    """
+    target = _target()
+    g = torch.Generator().manual_seed(0)
+    fine = irreducible_dsm_loss(target, 0.01, n_points=50_000, generator=g)
+    mid = irreducible_dsm_loss(target, 1.0, n_points=50_000, generator=g)
+    coarse = irreducible_dsm_loss(target, 100.0, n_points=50_000, generator=g)
+    assert fine == pytest.approx(2.0, abs=0.02)  # = d
+    assert coarse < 0.02
+    assert coarse < mid < fine
+
+
+def test_no_score_beats_the_floor():
+    """It is a floor: the exact score attains it, and perturbing away raises it."""
+    target = _target()
+    sigma = 0.7
+    g = torch.Generator().manual_seed(4)
+    n = 200_000
+    floor = irreducible_dsm_loss(target, sigma, n_points=n, generator=torch.Generator().manual_seed(4))
+
+    # Re-draw the same way and evaluate the collapsed loss for candidate
+    # epsilon predictors, which is what dsm_loss computes for a network.
+    x0 = target.sample(n, generator=g)
+    eps = torch.randn(x0.shape, dtype=DT, generator=g)
+    x = x0 + sigma * eps
+    best = -sigma * target.noised(sigma).score(x)
+    attained = float(((best - eps) ** 2).sum(dim=1).mean())
+    assert attained == pytest.approx(floor, rel=0.02)
+    for scale in (0.8, 1.2):
+        assert float((((scale * best) - eps) ** 2).sum(dim=1).mean()) > attained + 1e-3
+
+
+def test_the_frozen_batch_is_deterministic_and_its_exact_optimum_is_attained():
+    """The instrument the training-loss claim rests on.
+
+    Two properties: the frozen-batch loss is a *deterministic* function of the
+    parameters (so a flat curve means flat, not noisy), and its stated optimum
+    is really the optimum *on those points* -- attained by the exact Tweedie
+    predictor and beaten by nothing.
+    """
+    target = _target(dtype=torch.float32)
+    net = _net(width=32, depth=2, dtype=torch.float32)
+    batch = fixed_eval_batch(target, [0.1, 1.0, 4.0], n_per_level=2000, seed=7)
+
+    assert eval_dsm_loss(net, batch) == eval_dsm_loss(net, batch)
+    assert fixed_eval_batch(target, [0.1, 1.0, 4.0], n_per_level=2000, seed=7).x0.equal(batch.x0)
+
+    floor = eval_dsm_floor(target, batch)
+    x = batch.x0 + batch.sigmas.unsqueeze(1) * batch.noise
+    best = torch.cat(
+        [
+            -s * target.noised(s).score(x[i * 2000 : (i + 1) * 2000])
+            for i, s in enumerate(batch.levels)
+        ]
+    )
+    assert float(((best - batch.noise) ** 2).sum(dim=1).mean()) == pytest.approx(floor, rel=1e-6)
+    # Perturbing the optimal predictor in any direction costs, and an
+    # untrained network is well above the floor.
+    for scale in (0.9, 1.1):
+        assert float((((scale * best) - batch.noise) ** 2).sum(dim=1).mean()) > floor
+    assert eval_dsm_loss(net, batch) > floor
+
+
+def test_the_loss_floor_rejects_a_non_positive_level():
+    with pytest.raises(ValueError):
+        irreducible_dsm_loss(_target(), 0.0, n_points=10)
+
+
+# --------------------------------------------------------------------------
 # diagnostics against the exact noised score
 # --------------------------------------------------------------------------
 def test_diagnostics_report_a_perfect_match_for_the_exact_score_itself():
@@ -222,6 +305,40 @@ def test_diagnostics_report_a_perfect_match_for_the_exact_score_itself():
     # The exact score's own magnitude grows as sigma shrinks -- the reason
     # raw MSE cannot be compared across levels and relative MSE is reported.
     assert diag.exact_norm[0] > 5 * diag.exact_norm[-1]
+
+
+def test_the_unweighted_cosine_is_the_one_that_reads_noise_near_a_zero_of_the_field():
+    """The measurement trap the weighted cosine exists for.
+
+    A score that is exact except for a small additive perturbation is, in
+    *direction*, badly wrong wherever the true field is near zero and barely
+    wrong where it is large. The plain cosine averages those equally and
+    reports a low number; weighting by magnitude reports what a sampler
+    actually experiences. Constructed here rather than hoped for: the
+    perturbation is fixed and small, so any cosine gap between the two
+    statistics is the weighting, not the model.
+    """
+    # The ring, at the level where its modes have merged into one blob: the
+    # score passes through zero over a wide interior region that still carries
+    # ~10% of the mass. This is the configuration the experiment hit.
+    target = GaussianMixture.ring(n_components=8, radius=4.0, std=0.4)
+
+    class Perturbed:
+        def __call__(self, x, sigma):
+            exact = target.noised(float(sigma)).score(x)
+            g = torch.Generator().manual_seed(1)
+            # 5% of the field's own typical magnitude, so the perturbation is
+            # uniformly small in the only sense that is scale-free.
+            scale = 0.05 * float(exact.norm(dim=1).mean())
+            return exact + scale * torch.randn(exact.shape, generator=g)
+
+    diag = score_diagnostics(
+        Perturbed(), target, [2.25], n_points=20_000,
+        generator=torch.Generator().manual_seed(0),
+    )
+    assert diag.near_zero_fraction[0] > 0.05
+    assert diag.cosine_weighted[0] > diag.cosine[0] + 0.02
+    assert diag.cosine_weighted[0] > 0.99
 
 
 def test_diagnostics_penalize_a_score_that_points_the_wrong_way():

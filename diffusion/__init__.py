@@ -17,10 +17,15 @@ the toys are the point rather than a shortcut.
 
 from diffusion import dsm, langevin, model, targets  # noqa: F401
 from diffusion.dsm import (  # noqa: F401
+    EvalBatch,
     ScoreDiagnostics,
     TrainHistory,
     dsm_loss,
+    eval_dsm_floor,
+    eval_dsm_loss,
     explicit_score_matching_loss,
+    fixed_eval_batch,
+    irreducible_dsm_loss,
     sample_log_uniform_sigmas,
     score_diagnostics,
     train_score_model,
@@ -62,6 +67,11 @@ __all__ = [
     "sample_log_uniform_sigmas",
     "dsm_loss",
     "explicit_score_matching_loss",
+    "irreducible_dsm_loss",
+    "EvalBatch",
+    "fixed_eval_batch",
+    "eval_dsm_loss",
+    "eval_dsm_floor",
     "score_diagnostics",
     "ScoreDiagnostics",
     "TrainHistory",

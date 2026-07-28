@@ -130,6 +130,11 @@ __all__ = [
     "sample_log_uniform_sigmas",
     "dsm_loss",
     "explicit_score_matching_loss",
+    "irreducible_dsm_loss",
+    "EvalBatch",
+    "fixed_eval_batch",
+    "eval_dsm_loss",
+    "eval_dsm_floor",
     "score_diagnostics",
     "ScoreDiagnostics",
     "TrainHistory",
@@ -212,6 +217,123 @@ def explicit_score_matching_loss(
     return (sigma**2) * ((score_fn(x) - exact) ** 2).sum(dim=1).mean()
 
 
+def irreducible_dsm_loss(
+    target: Target,
+    sigma: float,
+    n_points: int = 100_000,
+    generator: torch.Generator | None = None,
+    return_stderr: bool = False,
+) -> float | tuple[float, float]:
+    r"""The floor of :func:`dsm_loss` at one noise level -- what a *perfect* score scores.
+
+    DSM's loss does not go to zero, and reading a raw loss curve without
+    knowing where its floor is says nothing about how well the score is
+    learned. The residual is irreducible because ``eps`` is not a function of
+    ``x``: the best possible prediction is the conditional mean, so
+
+        ``L*(sigma) = E || eps - E[eps | x] ||^2``,
+
+    and by Tweedie's formula ``E[eps | x] = -sigma * s_sigma(x)``, which this
+    repo can evaluate exactly. Estimated here by Monte Carlo with the analytic
+    noised score.
+
+    The two limits are worth knowing because they are counterintuitive:
+
+    - ``sigma -> 0``: ``x`` reveals ``x_0`` and says nothing about ``eps``, so
+      ``L* -> E||eps||^2 = d``. The *fine* levels are where the loss is
+      largest.
+    - ``sigma -> infinity``: ``x ~= sigma eps``, so ``eps`` is nearly
+      determined by ``x`` and ``L* -> 0``.
+
+    So a falling loss curve can mean the network is learning, or merely that
+    the batch happened to draw coarse levels. That is exactly why the
+    experiment reports error against the exact score per level, and why the
+    training curve is plotted against this floor rather than against zero.
+
+    With ``return_stderr`` the Monte Carlo standard error of the estimate is
+    returned alongside it. That is not decoration: a trained network's loss
+    sits within a percent of this floor, so an unquantified estimate of the
+    floor cannot support the comparison it is being used for.
+    """
+    if sigma <= 0:
+        raise ValueError(f"sigma must be positive, got {sigma}")
+    x0 = target.sample(n_points, generator=generator)
+    eps = torch.randn(x0.shape, dtype=x0.dtype, generator=generator)
+    x = x0 + sigma * eps
+    exact = target.noised(sigma).score(x)  # type: ignore[attr-defined]
+    best = -sigma * exact  # E[eps | x], by Tweedie
+    per_point = ((eps - best) ** 2).sum(dim=1)
+    mean = float(per_point.mean())
+    if not return_stderr:
+        return mean
+    return mean, float(per_point.std() / math.sqrt(n_points))
+
+
+@dataclass
+class EvalBatch:
+    """A frozen ``(x_0, sigma, eps)`` triple: the DSM loss without the noise.
+
+    A minibatch loss has a standard deviation of ~0.07 here, which is larger
+    than the entire gap between a well-trained network and the optimum, so a
+    training-loss curve cannot answer "is it still improving?". Freezing the
+    draws removes that: :func:`eval_dsm_loss` on this batch is a deterministic
+    function of the parameters.
+
+    ``sigmas`` is blockwise constant over ``levels`` rather than drawn
+    log-uniformly point by point, for one specific reason: it makes the
+    batch's *own* optimum computable exactly (:func:`eval_dsm_floor`), since
+    the analytic noised score can be evaluated once per level. A per-point
+    ladder would leave the floor estimable only by a separate Monte Carlo run
+    on different points, and the comparison would inherit that error.
+    """
+
+    x0: Tensor
+    sigmas: Tensor
+    noise: Tensor
+    levels: list[float]
+    n_per_level: int
+
+
+def fixed_eval_batch(
+    target: Target,
+    levels: Sequence[float],
+    n_per_level: int = 4000,
+    seed: int = 1234,
+) -> EvalBatch:
+    """Draw an :class:`EvalBatch`: ``n_per_level`` points at each of ``levels``."""
+    gen = torch.Generator().manual_seed(seed)
+    lv = [float(s) for s in levels]
+    if any(s <= 0 for s in lv):
+        raise ValueError("levels must be positive")
+    x0 = target.sample(len(lv) * n_per_level, generator=gen)
+    noise = torch.randn(x0.shape, dtype=x0.dtype, generator=gen)
+    sigmas = torch.tensor(lv, dtype=x0.dtype).repeat_interleave(n_per_level)
+    return EvalBatch(x0, sigmas, noise, lv, n_per_level)
+
+
+def eval_dsm_loss(model: ScoreNet, batch: EvalBatch) -> float:
+    """:func:`dsm_loss` on a frozen batch -- deterministic in the parameters."""
+    with torch.no_grad():
+        return float(dsm_loss(model, batch.x0, batch.sigmas, noise=batch.noise))
+
+
+def eval_dsm_floor(target: Target, batch: EvalBatch) -> float:
+    """The exact optimum of :func:`eval_dsm_loss` **on these same points**.
+
+    ``E[eps|x] = -sigma s_sigma(x)`` by Tweedie, evaluated level by level with
+    the analytic noised score. No Monte Carlo error relative to the quantity
+    it is being compared against: both are averages over the identical points,
+    so their difference is exactly the excess risk of the learned score.
+    """
+    x = batch.x0 + batch.sigmas.unsqueeze(1) * batch.noise
+    total = 0.0
+    for i, sigma in enumerate(batch.levels):
+        sl = slice(i * batch.n_per_level, (i + 1) * batch.n_per_level)
+        best = -sigma * target.noised(sigma).score(x[sl])  # type: ignore[attr-defined]
+        total += float(((best - batch.noise[sl]) ** 2).sum())
+    return total / batch.x0.shape[0]
+
+
 @dataclass
 class ScoreDiagnostics:
     """Per-level agreement between a learned score and the exact one."""
@@ -220,7 +342,9 @@ class ScoreDiagnostics:
     mse: list[float]
     relative_mse: list[float]
     cosine: list[float]
+    cosine_weighted: list[float]
     exact_norm: list[float]
+    near_zero_fraction: list[float]
 
     def as_rows(self) -> list[dict[str, float]]:
         return [
@@ -229,16 +353,24 @@ class ScoreDiagnostics:
                 "mse": m,
                 "relative_mse": r,
                 "cosine": c,
+                "cosine_weighted": cw,
                 "exact_norm": n,
+                "near_zero_fraction": z,
             }
-            for s, m, r, c, n in zip(
-                self.sigmas, self.mse, self.relative_mse, self.cosine, self.exact_norm
+            for s, m, r, c, cw, n, z in zip(
+                self.sigmas,
+                self.mse,
+                self.relative_mse,
+                self.cosine,
+                self.cosine_weighted,
+                self.exact_norm,
+                self.near_zero_fraction,
             )
         ]
 
 
 def score_diagnostics(
-    model: ScoreNet,
+    model: Callable[[Tensor, float], Tensor],
     target: Target,
     sigmas: Sequence[float],
     n_points: int = 4096,
@@ -246,13 +378,18 @@ def score_diagnostics(
 ) -> ScoreDiagnostics:
     """Compare ``s_theta(., sigma)`` against the exact noised score, level by level.
 
+    ``model`` is anything callable as ``s(x, sigma)``, which a
+    :class:`~diffusion.model.ScoreNet` is -- so the exact score can be passed
+    through the same instrument, and the tests do exactly that to check the
+    instrument reads zero on the truth.
+
     Evaluation points are drawn from ``p_sigma`` itself (exactly, via the
     noised mixture's own sampler) rather than from a fixed grid: the score is
     only asked to be right where the sampler will go, and a grid over a box
     would average in far-tail points where the exact score is enormous and
     nothing ever visits.
 
-    Three numbers per level, because they fail differently:
+    The numbers reported, because a score fails in several different ways:
 
     - ``mse``: ``mean ||s_theta - s||^2``, the raw magnitude. Falls with
       ``sigma`` mechanically, since the score itself does.
@@ -261,8 +398,21 @@ def score_diagnostics(
     - ``cosine``: mean cosine similarity, which isolates *direction*. A
       sampler follows the direction; a score that points correctly but is 20%
       too short still moves states to the right place, more slowly.
+    - ``cosine_weighted``: the same average weighted by ``||s||``, and the
+      reason it exists is a measurement trap this repo walked into. A plain
+      cosine gives a point where the exact score is ~0 exactly as much say as
+      a point where it is large -- but *direction is undefined at a zero of
+      the field*, so those points contribute noise, not error. At the noise
+      level where the ring target collapses into a single blob, 8% of the
+      draws sit inside the field's near-zero region, and the unweighted
+      cosine reads 0.96 while the same points weighted by magnitude read
+      0.997 and the upper half by magnitude reads 0.999. The dip is the
+      metric, not the model. Both are reported rather than the flattering one.
+    - ``near_zero_fraction``: the share of evaluation points with
+      ``||s|| < 0.1 mean||s||`` -- the diagnostic for that trap, so a low
+      unweighted cosine can be attributed rather than guessed at.
     """
-    sigs, mses, rels, coss, norms = [], [], [], [], []
+    sigs, mses, rels, coss, wcoss, norms, zeros = [], [], [], [], [], [], []
     for sigma in sigmas:
         noised = target.noised(float(sigma))  # type: ignore[attr-defined]
         x = noised.sample(n_points, generator=generator)
@@ -271,13 +421,16 @@ def score_diagnostics(
             learned = model(x, float(sigma))
         diff2 = ((learned - exact) ** 2).sum(dim=1)
         exact2 = (exact**2).sum(dim=1)
+        norm = exact2.sqrt()
         cos = torch.nn.functional.cosine_similarity(learned, exact, dim=1)
         sigs.append(float(sigma))
         mses.append(float(diff2.mean()))
         rels.append(float(diff2.mean() / exact2.mean()))
         coss.append(float(cos.mean()))
+        wcoss.append(float((cos * norm).sum() / norm.sum()))
         norms.append(float(exact2.mean().sqrt()))
-    return ScoreDiagnostics(sigs, mses, rels, coss, norms)
+        zeros.append(float((norm < 0.1 * norm.mean()).to(norm.dtype).mean()))
+    return ScoreDiagnostics(sigs, mses, rels, coss, wcoss, norms, zeros)
 
 
 @dataclass
@@ -289,6 +442,7 @@ class TrainHistory:
     eval_steps: list[int] = field(default_factory=list)
     eval_relative_mse: list[float] = field(default_factory=list)
     eval_cosine: list[float] = field(default_factory=list)
+    eval_loss: list[float] = field(default_factory=list)
     seconds: float = 0.0
 
 
@@ -305,6 +459,7 @@ def train_score_model(
     eval_every: int = 0,
     eval_sigmas: Sequence[float] | None = None,
     eval_points: int = 2048,
+    eval_batch: EvalBatch | None = None,
     progress: bool = False,
 ) -> TrainHistory:
     """Fit ``model`` by DSM on fresh draws from ``target``. Adam, no schedule.
@@ -348,5 +503,7 @@ def train_score_model(
             history.eval_steps.append(step)
             history.eval_relative_mse.append(sum(diag.relative_mse) / len(diag.relative_mse))
             history.eval_cosine.append(sum(diag.cosine) / len(diag.cosine))
+            if eval_batch is not None:
+                history.eval_loss.append(eval_dsm_loss(model, eval_batch))
     history.seconds = time.perf_counter() - t0
     return history

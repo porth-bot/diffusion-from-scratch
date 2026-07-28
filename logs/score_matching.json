@@ -1,0 +1,22 @@
+{
+  "parameters": 87298,
+  "width": 128,
+  "depth": 4,
+  "n_steps": 60000,
+  "batch_size": 512,
+  "lr": 0.002,
+  "seed": 0,
+  "sigma_min": 0.05,
+  "sigma_max": 8.0,
+  "train_seconds": 114.85538683299092,
+  "final_loss": 1.2555638551712036,
+  "early_training_loss": 1.2478152172906058,
+  "early_training_loss_se": 0.021097703568637504,
+  "late_training_loss": 1.2099711269628806,
+  "late_training_loss_se": 0.00951941648830306,
+  "irreducible_loss": 1.2106018252670765,
+  "irreducible_loss_se": 0.00042049388238146664,
+  "eval_batch_points": 52000,
+  "eval_batch_floor": 1.2029960233248198,
+  "eval_loss_final": 1.212338924407959
+}
