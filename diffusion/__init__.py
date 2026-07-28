@@ -15,7 +15,16 @@ discretization error. Neither check exists on an image dataset, which is why
 the toys are the point rather than a shortcut.
 """
 
-from diffusion import langevin, targets  # noqa: F401
+from diffusion import dsm, langevin, model, targets  # noqa: F401
+from diffusion.dsm import (  # noqa: F401
+    ScoreDiagnostics,
+    TrainHistory,
+    dsm_loss,
+    explicit_score_matching_loss,
+    sample_log_uniform_sigmas,
+    score_diagnostics,
+    train_score_model,
+)
 from diffusion.langevin import (  # noqa: F401
     annealed_langevin,
     geometric_sigmas,
@@ -23,6 +32,7 @@ from diffusion.langevin import (  # noqa: F401
     ula_gaussian_variance,
     unadjusted_langevin,
 )
+from diffusion.model import ScoreNet, SinusoidalEmbedding, count_parameters  # noqa: F401
 from diffusion.targets import (  # noqa: F401
     Crescent,
     Gaussian,
@@ -46,6 +56,18 @@ __all__ = [
     "geometric_sigmas",
     "stability_bound",
     "ula_gaussian_variance",
+    "SinusoidalEmbedding",
+    "ScoreNet",
+    "count_parameters",
+    "sample_log_uniform_sigmas",
+    "dsm_loss",
+    "explicit_score_matching_loss",
+    "score_diagnostics",
+    "ScoreDiagnostics",
+    "TrainHistory",
+    "train_score_model",
+    "dsm",
     "langevin",
+    "model",
     "targets",
 ]
