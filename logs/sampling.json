@@ -1,0 +1,27 @@
+{
+  "n_samples": 16000,
+  "mmd_points": 2000,
+  "n_permutations": 199,
+  "n_projections": 512,
+  "bandwidth_median_heuristic": 5.707678464496556,
+  "bandwidth_fine": 0.4,
+  "reference_mode_sd": 0.4011197090148926,
+  "target_mode_sd": 0.4,
+  "sigma_min": 0.05,
+  "sigma_max": 8.0,
+  "ddpm_levels": 200,
+  "langevin_tau": 0.002,
+  "langevin_stability_bound": 0.010000000000000002,
+  "sw2_floor_mean": 0.06595655819779442,
+  "sw2_floor_sd": 0.01996810336404781,
+  "sw2_floor_values": [
+    0.09200029556822976,
+    0.040493807972203734,
+    0.07746535377742032,
+    0.06791607153410882,
+    0.08078020869044014,
+    0.05553299224028716,
+    0.03636553628567101,
+    0.07709819951399444
+  ]
+}
