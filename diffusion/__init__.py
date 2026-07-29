@@ -15,7 +15,7 @@ discretization error. Neither check exists on an image dataset, which is why
 the toys are the point rather than a shortcut.
 """
 
-from diffusion import dsm, langevin, model, targets  # noqa: F401
+from diffusion import dsm, langevin, metrics, model, samplers, targets  # noqa: F401
 from diffusion.dsm import (  # noqa: F401
     EvalBatch,
     ScoreDiagnostics,
@@ -37,7 +37,19 @@ from diffusion.langevin import (  # noqa: F401
     ula_gaussian_variance,
     unadjusted_langevin,
 )
+from diffusion.metrics import (  # noqa: F401
+    MMDTest,
+    SlicedWasserstein,
+    gaussian_rbf_mmd2,
+    gaussian_sliced_wasserstein2,
+    median_heuristic_bandwidth,
+    mmd_permutation_test,
+    rbf_kernel_matrix,
+    rbf_mmd2,
+    sliced_wasserstein,
+)
 from diffusion.model import ScoreNet, SinusoidalEmbedding, count_parameters  # noqa: F401
+from diffusion.samplers import ddpm_ancestral, ddpm_gaussian_variance  # noqa: F401
 from diffusion.targets import (  # noqa: F401
     Crescent,
     Gaussian,
@@ -76,8 +88,21 @@ __all__ = [
     "ScoreDiagnostics",
     "TrainHistory",
     "train_score_model",
+    "ddpm_ancestral",
+    "ddpm_gaussian_variance",
+    "median_heuristic_bandwidth",
+    "rbf_kernel_matrix",
+    "rbf_mmd2",
+    "MMDTest",
+    "mmd_permutation_test",
+    "SlicedWasserstein",
+    "sliced_wasserstein",
+    "gaussian_rbf_mmd2",
+    "gaussian_sliced_wasserstein2",
     "dsm",
     "langevin",
+    "metrics",
     "model",
+    "samplers",
     "targets",
 ]
