@@ -32,6 +32,7 @@ That is why the toys are the point and not a shortcut.
 | [`diffusion/dsm.py`](diffusion/dsm.py) | Denoising score matching (Vincent 2011) with its equivalence proof, the $\sigma^2$ weighting that collapses it to $\\|\epsilon_\theta - \epsilon\\|^2$, per-level diagnostics against the exact score, and the loss's irreducible floor |
 | [`diffusion/samplers.py`](diffusion/samplers.py) | Ancestral (DDPM) sampling down the ladder, derived for this repo's variance-exploding chain, with the closed-form variance it returns on a Gaussian target — including the deficit a coarse ladder is *supposed* to have |
 | [`diffusion/metrics.py`](diffusion/metrics.py) | Two-sample metrics written out: RBF-kernel MMD with a permutation test, sliced Wasserstein, and the exact value each takes on Gaussians |
+| [`diffusion/ode.py`](diffusion/ode.py) | The probability-flow ODE with $\sigma$ as the clock, a written-out RK4 (measured fourth-order), and likelihoods by instantaneous change of variables with a Hutchinson trace estimator — plus the exact flow on a Gaussian, which is what the solver is tested against |
 
 Every sampler takes the score as a callable, so the same code runs on the
 *exact* score and on the network. That is what makes the sampler claims
@@ -197,6 +198,150 @@ differs. The median heuristic is a sensible default and it is not an oracle;
 on a target with structure at two scales an order of magnitude apart, it finds
 the one you were not asking about. Sliced Wasserstein, which has no bandwidth,
 flags the same row without being told where to look.
+
+## Take the noise out: the probability-flow ODE
+
+![ODE vs SDE](figures/ode_vs_sde.png)
+
+The forward process has no drift, so its density obeys the heat equation
+$\partial_t p = \tfrac12 g^2 \Delta p$. Write $\Delta p = \nabla\cdot(p \nabla \log p)$
+and that *is* a continuity equation — which says $p$ is transported by a
+velocity field. Taking $\sigma$ as the clock instead of $t$, the schedule
+cancels out of it entirely:
+
+$$\frac{dx}{d\sigma} = -\sigma\, s(x, \sigma).$$
+
+So sampling becomes an initial value problem, and two things fall out of the
+same equation. One Euler step of it is **half** the ancestral sampler's mean
+update — the missing half plus the injected noise are a Langevin step, which
+leaves $p_\sigma$ invariant, so the stochastic sampler is this ODE plus a term
+that does nothing in exact arithmetic. And on a Gaussian target the ODE
+separates: every point moves along its own ray by
+$\sqrt{(v+\sigma_1^2)/(v+\sigma_0^2)}$, an exact solution the solver is tested
+against *pointwise*, which is how `tests/test_ode.py` measures RK4's order as
+4.0 and Euler's as 1.0 rather than trusting the label.
+
+### Same budget, three dynamics
+
+[`experiments/ode.py`](experiments/ode.py) puts the ancestral sampler and the
+PF-ODE (Euler and RK4) on one axis: score evaluations. RK4 spends four per
+step, so at a budget of 41 it gets 11 nodes against the ancestral sampler's 41
+levels. Sliced $W_2$ against an exact draw, 16,000 samples per cell:
+
+| sliced $W_2$ | NFE 9 | 17 | 41 | 81 | 201 | 401 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| ancestral, exact | 0.131 | 0.090 | 0.062 | 0.055 | 0.051 | 0.080 |
+| PF-ODE Euler, exact | 0.180 | 0.113 | 0.082 | 0.074 | 0.070 | 0.069 |
+| PF-ODE RK4, exact | 0.687 | **0.059** | 0.067 | 0.068 | 0.068 | 0.068 |
+| ancestral, **learned** | 0.236 | 0.172 | 0.147 | 0.146 | 0.151 | 0.125 |
+| PF-ODE Euler, **learned** | 0.205 | 0.150 | 0.123 | 0.116 | 0.112 | 0.111 |
+| PF-ODE RK4, **learned** | 0.666 | 0.113 | 0.111 | 0.109 | 0.110 | 0.110 |
+
+Read the exact-score rows against the floor, not against zero: two independent
+exact draws differ by $0.066 \pm 0.020$ (range 0.036–0.092 over eight pairs), so
+from 41 evaluations on **all three are inside that band and none of them is
+distinguishable from an exact draw, or from each other**. What can still be said
+is who gets there first: at 17 evaluations RK4 reads 0.059, at the floor's
+centre, while the ancestral sampler is at its top edge (0.090) and Euler is
+outside it (0.113). And at 9 evaluations, where RK4 has 2 steps to work with, it
+is by far the worst of the three (0.687) — fourth-order accuracy buys nothing
+until there are steps to be accurate over.
+
+The learned-score rows are outside the band, and they separate: the ODE sits
+below the ancestral sampler at every matched budget from 17 up, with steadier
+mode weights (TV 0.019 against 0.031). Each individual gap is about twice the
+floor's own spread; what makes the ordering credible is that five budgets and
+two statistics all point the same way. The honest summary is that *which
+dynamics is better here is a property of the score, not of the samplers* — with
+the truth in hand the noise costs nothing, and with a biased score the extra
+randomness does not help.
+
+Middle panel, the coarse-ladder biases, which point in opposite directions:
+ancestral approaches the target mode width **from below** (0.378 at 17
+evaluations, 0.396 at 401) because it replaces the posterior over $x_0$ by its
+mean and loses spread; Euler approaches it **from above** (0.433 → 0.395)
+because an under-resolved flow has not finished contracting.
+
+### A deterministic sampler inherits its prior, permanently
+
+One number in that sweep does not move at all: the ODE's mode-weight TV with
+the exact score is **0.0121 at every budget from 9 to 401**, to four decimals.
+That is not a coincidence, it is what determinism means — the map from prior
+draw to sample is a fixed diffeomorphism, so which mode each prior point lands
+in is decided by the prior sample, and refining the solver cannot re-roll it.
+The stochastic sampler's TV wanders between 0.004 and 0.012 across the same
+budgets because it re-randomizes at every level.
+
+That also explains the floor under the ODE's mode width (0.3932 against a
+target of 0.4, flat from 81 evaluations on). Feed the identical run an exact
+draw from $p_{\sigma_{\max}}$ instead of $N(0, \sigma_{\max}^2 I)$:
+
+| PF-ODE RK4, 201 NFE | weight TV | mode sd | sliced $W_2$ |
+| --- | ---: | ---: | ---: |
+| exact score, $N(0,\sigma_{\max}^2)$ start | 0.0121 | 0.3932 | 0.068 |
+| exact score, exact $p_{\sigma_{\max}}$ start | 0.0055 | 0.3980 | 0.065 |
+
+Prior mismatch, and nothing else, was most of what remained.
+
+## Likelihoods, checked against a closed form
+
+![ODE likelihood](figures/ode_likelihood.png)
+
+The flow is invertible, so it carries densities as well as points. Along a
+trajectory $d/ds \log p_s = -\nabla\cdot v$ (the continuity equation again), and
+integrating *up* the ladder gives
+
+$$\log p_{\sigma_{\min}}(x) = \log p_{\sigma_{\max}}(z) + \int_{\sigma_{\min}}^{\sigma_{\max}} \nabla\cdot v \, ds,$$
+
+with the divergence estimated by $\mathbb{E}[\varepsilon^\top J \varepsilon]$ at
+one vector-Jacobian product per probe (FFJORD). Probes are drawn **once per
+solve**: resampling them inside the integrator makes the augmented field
+discontinuous in $s$ and silently costs the solver its order. Rademacher probes
+are the default because on a diagonal Jacobian they return the trace exactly,
+where Gaussian probes still carry variance — and at points where one mixture
+component dominates, the noised score's Jacobian *is* exactly isotropic, so that
+is not a hypothetical.
+
+Because the noised mixture's density is closed-form, every number here has a
+truth to be wrong against. Two errors, separated:
+
+| RK4 nodes | 3 | 5 | 9 | 17 | 41 | 81 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| mean $\lvert$error$\rvert$, exact divergence (nats) | 1.4e+0 | 1.2e-1 | 1.4e-2 | 5.5e-4 | 1.1e-5 | 1.3e-6 |
+
+| Hutchinson probes $k$ | 1 | 2 | 4 | 8 | 16 | 32 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| mean $\lvert$error$\rvert$ at 41 nodes (nats) | 0.78 | 0.38 | 0.30 | 0.22 | 0.150 | 0.111 |
+
+Integration error falls at roughly $h^4$ until it reaches the float32 noise
+floor around $10^{-6}$ (the 81-node point is that floor, not the method's), and
+estimator variance falls as $1/\sqrt{k}$ — but at 41 nodes it is still *four
+orders of magnitude above* the integration error (0.111 nats at 32 probes
+against 1.1e-5). At $d = 2$ the exact trace costs two
+backward passes and the estimator costs accuracy, so the honest conclusion is
+that Hutchinson is machinery for dimensions this repo does not have, included
+because that is where the method is actually used and because its cost is worth
+measuring rather than assuming.
+
+### What the model's likelihood is worth, in nats
+
+Each of these three flows is a normalized density, so averaging
+$\log p - \log q$ over exact draws estimates $\mathrm{KL}(p_{\sigma_{\min}} \| q)$,
+which cannot be negative. 2,000 draws, 41 nodes, exact divergence:
+
+| flow | $\mathbb{E}[\log q]$ | estimated KL (nats) |
+| --- | ---: | ---: |
+| exact score, exact $p_{\sigma_{\max}}$ prior | −3.1211 | $-9\times10^{-6} \pm 0.0000$ |
+| exact score, $N(0,\sigma_{\max}^2)$ prior | −3.1300 | $+0.0089 \pm 0.0029$ |
+| **learned** score, $N(0,\sigma_{\max}^2)$ prior | −3.1885 | $+0.0674 \pm 0.0082$ |
+
+The first row is the method's own zero: that flow reproduces the target
+exactly, so whatever it reports is the error bar on the other two. Against it,
+starting the sampler from a Gaussian instead of $p_{\sigma_{\max}}$ costs
+0.0089 nats and the score being learned costs a further 0.0585 — the estimation
+error is about seven times the prior gap. Both were visible in the sample
+metrics only as "somewhere inside the floor band"; the likelihood puts a number
+on each, which is the whole reason to compute one.
 
 ## Relation to mcmc-from-scratch
 
