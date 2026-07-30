@@ -446,6 +446,21 @@ def _jacobian_vector_products(
     return v.detach(), torch.stack(rows).detach()
 
 
+def _coordinate_basis(x: Tensor) -> Tensor:
+    """``(d, n, d)``: the ``j``-th slice is ``e_j`` repeated over the batch."""
+    return torch.stack(
+        [
+            torch.zeros_like(x).index_fill_(1, torch.tensor([j]), 1.0)
+            for j in range(x.shape[1])
+        ]
+    )
+
+
+def _trace_from_basis_rows(rows: Tensor) -> Tensor:
+    """``rows[j] = e_j' J``, so the trace is the sum of the ``j``-th columns."""
+    return torch.stack([rows[j, :, j] for j in range(rows.shape[0])]).sum(dim=0)
+
+
 def exact_divergence(field: VectorField, x: Tensor, s: float) -> Tensor:
     """``div v(x, s)`` exactly, by ``d`` reverse-mode passes -> ``(n,)``.
 
@@ -456,15 +471,8 @@ def exact_divergence(field: VectorField, x: Tensor, s: float) -> Tensor:
     costs instead of assuming it away.
     """
     x = x.detach()
-    basis = torch.stack(
-        [
-            torch.zeros_like(x).index_fill_(1, torch.tensor([j]), 1.0)
-            for j in range(x.shape[1])
-        ]
-    )
-    _, rows = _jacobian_vector_products(field, x, s, basis)
-    # rows[j] = e_j' J, so its j-th column is dv_j/dx_j.
-    return torch.stack([rows[j, :, j] for j in range(x.shape[1])]).sum(dim=0)
+    _, rows = _jacobian_vector_products(field, x, s, _coordinate_basis(x))
+    return _trace_from_basis_rows(rows)
 
 
 def hutchinson_divergence(field: VectorField, x: Tensor, s: float, probes: Tensor) -> Tensor:
@@ -595,9 +603,18 @@ def pf_ode_log_prob(
         n_rows = n_probes
 
     def field_and_div(state: Tensor, s: float) -> tuple[Tensor, Tensor]:
+        """Both halves of the augmented field from one forward pass.
+
+        Deliberately not ``v(state, s)`` plus a call to the divergence
+        helpers: those recompute the forward pass, and with a network in the
+        field the second copy also leaves an autograd graph attached to the
+        integrator's state, which then grows for the whole solve.
+        """
         if probes is None:
-            return v(state, s), exact_divergence(v, state, s).unsqueeze(0)
-        return v(state, s), hutchinson_divergence(v, state, s, probes)
+            val, rows = _jacobian_vector_products(v, state, s, _coordinate_basis(state))
+            return val, _trace_from_basis_rows(rows).unsqueeze(0)
+        val, rows = _jacobian_vector_products(v, state, s, probes)
+        return val, (rows * probes).sum(dim=2)
 
     state = x.detach().clone()
     log_det = torch.zeros(n_rows, x.shape[0], dtype=x.dtype)

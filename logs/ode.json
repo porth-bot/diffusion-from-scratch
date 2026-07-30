@@ -1,0 +1,12 @@
+{
+  "n_points": 2000,
+  "ll_nodes": 41,
+  "sigma_min": 0.05,
+  "sigma_max": 8.0,
+  "entropy_reference": -3.1210994720458984,
+  "kl_nats": {
+    "exact score, exact prior": -9.445548130315728e-06,
+    "exact score, Gaussian prior": 0.008945726789534092,
+    "learned score, Gaussian prior": 0.06744547933340073
+  }
+}
