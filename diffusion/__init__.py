@@ -3,9 +3,11 @@ score is known exactly.
 
 A diffusion model is an estimate of ``grad log p``. This repo builds one from
 that sentence outward -- Langevin dynamics that need only the score
-(:mod:`diffusion.langevin`), denoising score matching that learns it, and the
-reverse-time samplers that turn it back into draws -- on 2D targets chosen so
-that the truth is available in closed form (:mod:`diffusion.targets`).
+(:mod:`diffusion.langevin`), denoising score matching that learns it, the
+reverse-time samplers that turn it back into draws, and the deterministic
+probability-flow ODE that also hands back likelihoods (:mod:`diffusion.ode`)
+-- on 2D targets chosen so that the truth is available in closed form
+(:mod:`diffusion.targets`).
 
 The choice of targets is the design of the repo. A Gaussian mixture stays a
 Gaussian mixture when noised, so its score is analytic at *every* noise level:
@@ -15,7 +17,7 @@ discretization error. Neither check exists on an image dataset, which is why
 the toys are the point rather than a shortcut.
 """
 
-from diffusion import dsm, langevin, metrics, model, samplers, targets  # noqa: F401
+from diffusion import dsm, langevin, metrics, model, ode, samplers, targets  # noqa: F401
 from diffusion.dsm import (  # noqa: F401
     EvalBatch,
     ScoreDiagnostics,
@@ -49,6 +51,22 @@ from diffusion.metrics import (  # noqa: F401
     sliced_wasserstein,
 )
 from diffusion.model import ScoreNet, SinusoidalEmbedding, count_parameters  # noqa: F401
+from diffusion.ode import (  # noqa: F401
+    LogProbResult,
+    VectorField,
+    euler_step,
+    exact_divergence,
+    gaussian_pf_ode_scale,
+    gaussian_probes,
+    hutchinson_divergence,
+    integrate,
+    pf_ode_field,
+    pf_ode_log_prob,
+    pf_ode_nfe,
+    pf_ode_sample,
+    rademacher_probes,
+    rk4_step,
+)
 from diffusion.samplers import ddpm_ancestral, ddpm_gaussian_variance  # noqa: F401
 from diffusion.targets import (  # noqa: F401
     Crescent,
@@ -90,6 +108,20 @@ __all__ = [
     "train_score_model",
     "ddpm_ancestral",
     "ddpm_gaussian_variance",
+    "VectorField",
+    "euler_step",
+    "rk4_step",
+    "integrate",
+    "pf_ode_field",
+    "pf_ode_sample",
+    "pf_ode_nfe",
+    "gaussian_pf_ode_scale",
+    "rademacher_probes",
+    "gaussian_probes",
+    "exact_divergence",
+    "hutchinson_divergence",
+    "LogProbResult",
+    "pf_ode_log_prob",
     "median_heuristic_bandwidth",
     "rbf_kernel_matrix",
     "rbf_mmd2",
@@ -103,6 +135,7 @@ __all__ = [
     "langevin",
     "metrics",
     "model",
+    "ode",
     "samplers",
     "targets",
 ]
