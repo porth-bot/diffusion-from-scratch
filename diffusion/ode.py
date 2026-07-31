@@ -148,6 +148,10 @@ References
   role; Hutchinson (1989) for the estimator itself.
 - Karras et al. (2022), *Elucidating the Design Space of Diffusion-Based
   Generative Models* -- sigma as the clock, node placement as a solver choice.
+
+``theory/derivations.md`` Sec. 5 derives the same flow from the Fokker-Planck
+equation, including the one-parameter family that has the reverse SDE and this
+ODE as its two ends.
 """
 
 from __future__ import annotations

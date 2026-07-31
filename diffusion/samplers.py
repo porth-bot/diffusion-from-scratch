@@ -94,6 +94,10 @@ target with a known score is that they can be measured apart:
    analytic score, which the mixture target provides at every level.
 
 ``experiments/sampling.py`` runs all three controls.
+
+``theory/derivations.md`` Sec. 4 places this discrete derivation next to the
+continuous one it discretizes -- the forward SDE and Anderson's reverse-time
+SDE -- and checks that the two give the same mean update.
 """
 
 from __future__ import annotations

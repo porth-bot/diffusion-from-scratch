@@ -52,6 +52,10 @@ Points are ``(n, d)`` tensors; ``log_prob`` returns ``(n,)`` and ``score``
 returns ``(n, d)``. Each target owns a dtype (default ``float32``, matching
 the networks that come later) and inputs are cast to it, so a ``float64``
 target used in a finite-difference test computes in ``float64`` throughout.
+
+``theory/derivations.md`` Sec. 1-2 writes out the same material at length: why
+the score is the object worth modeling, the responsibility identity, closure
+under noising, and Tweedie's formula with the curvature bound it implies.
 """
 
 from __future__ import annotations

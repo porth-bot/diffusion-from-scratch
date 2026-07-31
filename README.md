@@ -34,6 +34,14 @@ That is why the toys are the point and not a shortcut.
 | [`diffusion/metrics.py`](diffusion/metrics.py) | Two-sample metrics written out: RBF-kernel MMD with a permutation test, sliced Wasserstein, and the exact value each takes on Gaussians |
 | [`diffusion/ode.py`](diffusion/ode.py) | The probability-flow ODE with $\sigma$ as the clock, a written-out RK4 (measured fourth-order), and likelihoods by instantaneous change of variables with a Hutchinson trace estimator — plus the exact flow on a Gaussian, which is what the solver is tested against |
 
+[`theory/derivations.md`](theory/derivations.md) carries the maths behind all
+of it, section-numbered to match the modules: the mixture's score and its
+closure under noising, Tweedie's formula, Hyvärinen's identity and Vincent's
+denoising form of it, Anderson's reverse-time SDE and the ancestral sampler as
+its discretization, the probability-flow ODE and its likelihoods, and the
+Langevin bridge back to
+[mcmc-from-scratch](https://github.com/porth-bot/mcmc-from-scratch).
+
 Every sampler takes the score as a callable, so the same code runs on the
 *exact* score and on the network. That is what makes the sampler claims
 testable at all: run both and the difference is estimation error, full stop.
@@ -369,10 +377,10 @@ python -m venv .venv && ./.venv/bin/pip install -e ".[dev]"
 ## Provenance
 
 A from-scratch study resource for learning how score-based generative models
-work. Every derivation is written out (in the module docstrings now, in
-`theory/derivations.md` when it lands) and every non-obvious claim is tested
-against a closed-form or independently computed ground truth rather than
-taken on faith.
+work. Every derivation is written out — in the module docstrings and, at
+length, in [`theory/derivations.md`](theory/derivations.md) — and every
+non-obvious claim is tested against a closed-form or independently computed
+ground truth rather than taken on faith.
 
 ## License
 

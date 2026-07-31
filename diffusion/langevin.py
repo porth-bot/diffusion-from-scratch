@@ -111,6 +111,11 @@ This module takes the score as a **callable**, so the same code runs on an
 exact score from :mod:`diffusion.targets` and on a learned one later. Today
 every experiment uses the exact score, which is what makes the annealing claim
 testable: any failure is the sampler's, not an estimation error.
+
+``theory/derivations.md`` Sec. 6 collects all of this as the bridge back to
+mcmc-from-scratch, including the one place the analogy stops holding: an
+equilibrium sampler handed a *learned* score converges harder to the wrong
+answer the longer it is run.
 """
 
 from __future__ import annotations

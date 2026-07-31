@@ -60,6 +60,10 @@ from that use is instructive: there the features are *random* because the
 target's frequency content is unknown, here they are *deterministic and
 geometric* because the axis being embedded is one known, bounded, log-scaled
 coordinate.
+
+``theory/derivations.md`` Sec. 3.4 puts the output parameterization next to the
+loss weighting it interacts with, which is the argument for why both divisions
+by ``sigma`` are needed.
 """
 
 from __future__ import annotations

@@ -110,6 +110,10 @@ also the limit where the ``1/sigma`` amplification of any network error is
 worst. The experiment reports error against the exact noised score at every
 level rather than a single headline number, because there is no single level
 at which "the score" is being learned.
+
+``theory/derivations.md`` Sec. 3 carries the same argument with Hyvarinen's
+identity beside it, so the two ways of removing the unknown term can be
+compared rather than only one being shown.
 """
 
 from __future__ import annotations
