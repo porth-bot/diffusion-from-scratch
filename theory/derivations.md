@@ -579,7 +579,15 @@ of this one trajectory, so the only thing a schedule can change is *where the
 integration nodes are placed* — which is a property of the solver, not of the
 model (Karras et al. 2022 make the same point). Every function in
 `diffusion/ode.py` therefore takes a ladder of $\sigma$ values and treats it as
-a set of nodes.
+a set of nodes. `diffusion/langevin.py` builds three of them — uniform in
+$\log\sigma$ (geometric), in $\sigma$ (linear), and in $\arctan\sigma$, which is
+Nichol & Dhariwal's cosine schedule rewritten for a variance-exploding process
+via $\sigma^2 = (1-\bar\alpha)/\bar\alpha$ — and
+`experiments/schedules.py` runs all three through both samplers. The claim
+survives contact: past 41 score evaluations the three PF-ODE arms agree to four
+decimals. The ancestral sampler keeps a schedule dependence at every budget
+measured, which is the right outcome, because it discretizes the *chain* of
+Sec. 4.3 and not this flow.
 
 Two consequences worth stating because they are checkable:
 
@@ -799,6 +807,7 @@ instead of a guess.
 - Song & Ermon (2020), "Improved techniques for training score-based generative models", *NeurIPS* (ladder spacing, Sec. 6.2).
 - Ho, Jain & Abbeel (2020), "Denoising diffusion probabilistic models", *NeurIPS* (the ancestral sampler, Eq. 11; $\epsilon$-prediction).
 - Song, Sohl-Dickstein, Kingma, Kumar, Ermon & Poole (2021), "Score-based generative modeling through stochastic differential equations", *ICLR* (the SDE framing; probability-flow ODE, Eq. 13; App. D likelihoods, App. F the VE ancestral sampler).
+- Nichol & Dhariwal (2021), "Improved denoising diffusion probabilistic models", *ICML* (the cosine schedule, rederived for the VE process in `diffusion.langevin.cosine_sigmas`).
 - Karras, Aittala, Aila & Laine (2022), "Elucidating the design space of diffusion-based generative models", *NeurIPS* ($\sigma$ as the clock; node placement as a solver choice).
 - Chen, Rubanova, Bettencourt & Duvenaud (2018), "Neural ordinary differential equations", *NeurIPS* (instantaneous change of variables, Sec. 5.3).
 - Hutchinson (1989), *Commun. Statist. Simul. Comput.* 18 (the trace estimator); Grathwohl, Chen, Bettencourt, Sutskever & Duvenaud (2019), "FFJORD", *ICLR* (its use in a continuous flow).

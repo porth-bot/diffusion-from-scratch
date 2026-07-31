@@ -27,7 +27,7 @@ That is why the toys are the point and not a shortcut.
 | Module | Contents |
 | --- | --- |
 | [`diffusion/targets.py`](diffusion/targets.py) | `GaussianMixture` (responsibility-weighted analytic score, exact moments and sampler, closed under noising), `TwoMoons` built as an actual normalized density in polar coordinates rather than a sampling recipe, and the finite-difference oracle every score is checked against |
-| [`diffusion/langevin.py`](diffusion/langevin.py) | Unadjusted Langevin, and Song & Ermon's annealed Langevin with the $\tau_i \propto \sigma_i^2$ step-size schedule and the stability bound that schedule implies |
+| [`diffusion/langevin.py`](diffusion/langevin.py) | Unadjusted Langevin, and Song & Ermon's annealed Langevin with the $\tau_i \propto \sigma_i^2$ step-size schedule and the stability bound that schedule implies; plus the three noise ladders (geometric, linear, and the cosine schedule rederived for a variance-exploding process) |
 | [`diffusion/model.py`](diffusion/model.py) | The score network: an MLP conditioned on $\log\sigma$ through a written-out sinusoidal embedding, with the score formed as $-\epsilon_\theta/\sigma$ so the learned object is unit-scale at every noise level |
 | [`diffusion/dsm.py`](diffusion/dsm.py) | Denoising score matching (Vincent 2011) with its equivalence proof, the $\sigma^2$ weighting that collapses it to $\\|\epsilon_\theta - \epsilon\\|^2$, per-level diagnostics against the exact score, and the loss's irreducible floor |
 | [`diffusion/samplers.py`](diffusion/samplers.py) | Ancestral (DDPM) sampling down the ladder, derived for this repo's variance-exploding chain, with the closed-form variance it returns on a Gaussian target — including the deficit a coarse ladder is *supposed* to have |
@@ -290,6 +290,64 @@ draw from $p_{\sigma_{\max}}$ instead of $N(0, \sigma_{\max}^2 I)$:
 | exact score, exact $p_{\sigma_{\max}}$ start | 0.0055 | 0.3980 | 0.065 |
 
 Prior mismatch, and nothing else, was most of what remained.
+
+### The noise schedule cancels — for one of the two samplers
+
+![schedules](figures/schedules.png)
+
+If the schedule really does drop out of $dx/d\sigma = -\sigma s$, then two
+ladders with the same endpoints describe the same trajectory and differ only in
+where they put nodes. That is a statement about the continuous limit, so
+[`experiments/schedules.py`](experiments/schedules.py) asks what it is worth at
+a finite budget. Three ladders, each uniform spacing in a different warp of
+$\sigma$:
+
+- **geometric** — uniform in $\log\sigma$, the repo's default.
+- **linear** — uniform in $\sigma$, the naive choice.
+- **cosine** — uniform in $\arctan\sigma$. That *is* Nichol & Dhariwal's
+  schedule: their $\bar\alpha = \cos^2(\pi u/2)$ is variance-preserving, and a
+  VP state is $\sqrt{\bar\alpha}\,(x_0 + \sigma\varepsilon)$ with
+  $\sigma^2 = (1-\bar\alpha)/\bar\alpha$, so $\sigma(u) = \tan(\pi u / 2)$.
+
+Sliced $W_2$ against an exact draw, exact score, 16,000 samples per cell,
+averaged over three prior draws (seed-to-seed sd averages 0.008):
+
+| exact score | NFE 9 | 17 | 41 | 101 | 201 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ancestral, geometric | 0.109 | 0.079 | 0.067 | 0.052 | 0.054 |
+| ancestral, cosine | 0.096 | 0.079 | 0.064 | 0.060 | 0.051 |
+| ancestral, linear | **0.233** | 0.125 | 0.086 | 0.066 | 0.063 |
+| PF-ODE RK4, geometric | **0.689** | 0.064 | 0.0713 | 0.0715 | 0.0715 |
+| PF-ODE RK4, cosine | 0.302 | 0.064 | 0.0708 | 0.0715 | 0.0715 |
+| PF-ODE RK4, linear | 0.237 | 0.121 | 0.0711 | 0.0715 | 0.0715 |
+
+**The ODE forgets the schedule, on schedule.** Its three arms disagree by 0.451
+at 9 evaluations — 57× the seed-to-seed spread — then by 0.058 at 17, 0.0005 at
+41, and 0.0001 from 101 on, which is below what the statistic can resolve. Three
+different ladders, the same answer to four decimals: the cancellation is not a
+rewriting trick, it is something the sampler actually does.
+
+**The ancestral sampler does not.** Its spread never closes: 0.021 at 41, 0.015
+at 101, 0.016 at 201, always with the linear ladder worst. That is the right
+outcome rather than a discrepancy — the derivation covers the flow, not the
+chain, and the chain's per-level plug-in error (§ ancestral, above) depends on
+the *gap* between adjacent levels. At 201 levels the linear ladder's finest
+ratio is still 1.79 where the geometric one is 1.03.
+
+**And at 9 evaluations the two samplers rank the schedules in opposite orders.**
+Linear is the worst ancestral ladder (0.233) and the best ODE one (0.237 against
+geometric's 0.689), because RK4 at that budget has 3 nodes and the geometric
+ladder spends them at the fine end where this target's flow has already stopped
+moving, while the ancestral sampler has 9 levels and is hurt by linear's final
+ratio of 21. A study that ran one sampler would have come away with a
+schedule recommendation that is wrong for the other one.
+
+The practical conclusion is the least dramatic reading. At any budget past 41,
+swapping the schedule moves the learned-score ODE by less than 0.0015 while the
+score being learned rather than exact costs 0.037 — more than twenty-five
+times as much.
+On this target the schedule is a knob worth setting sensibly once and then
+leaving alone.
 
 ## Likelihoods, checked against a closed form
 
