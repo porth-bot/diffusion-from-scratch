@@ -33,8 +33,12 @@ from diffusion.dsm import (  # noqa: F401
     train_score_model,
 )
 from diffusion.langevin import (  # noqa: F401
+    SIGMA_SCHEDULES,
     annealed_langevin,
+    cosine_sigmas,
     geometric_sigmas,
+    linear_sigmas,
+    sigma_ladder,
     stability_bound,
     ula_gaussian_variance,
     unadjusted_langevin,
@@ -89,6 +93,10 @@ __all__ = [
     "unadjusted_langevin",
     "annealed_langevin",
     "geometric_sigmas",
+    "linear_sigmas",
+    "cosine_sigmas",
+    "SIGMA_SCHEDULES",
+    "sigma_ladder",
     "stability_bound",
     "ula_gaussian_variance",
     "SinusoidalEmbedding",

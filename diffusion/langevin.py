@@ -138,6 +138,10 @@ __all__ = [
     "unadjusted_langevin",
     "annealed_langevin",
     "geometric_sigmas",
+    "linear_sigmas",
+    "cosine_sigmas",
+    "SIGMA_SCHEDULES",
+    "sigma_ladder",
     "ula_gaussian_variance",
     "stability_bound",
 ]
@@ -201,6 +205,102 @@ def geometric_sigmas(sigma_max: float, sigma_min: float, n_levels: int) -> list[
         return [float(sigma_max)]
     ratio = (sigma_min / sigma_max) ** (1.0 / (n_levels - 1))
     return [float(sigma_max * ratio**i) for i in range(n_levels)]
+
+
+def _warped_ladder(
+    sigma_max: float,
+    sigma_min: float,
+    n_levels: int,
+    forward: Callable[[float], float],
+    inverse: Callable[[float], float],
+) -> list[float]:
+    """Uniform spacing in ``forward(sigma)``, mapped back through ``inverse``.
+
+    Every schedule in this module is this function with a different warp, which
+    is the whole content of the claim in ``theory/derivations.md`` Sec. 5.2: in
+    the ``sigma`` clock the noise schedule has cancelled out of the dynamics, so
+    a "schedule" is nothing but a choice of where to place nodes on one fixed
+    trajectory.
+    """
+    if n_levels < 1:
+        raise ValueError("n_levels must be >= 1")
+    if not (sigma_max >= sigma_min > 0):
+        raise ValueError("need sigma_max >= sigma_min > 0")
+    if n_levels == 1:
+        return [float(sigma_max)]
+    hi, lo = forward(float(sigma_max)), forward(float(sigma_min))
+    n = n_levels - 1
+    return [float(inverse(hi + (lo - hi) * i / n)) for i in range(n_levels)]
+
+
+def linear_sigmas(sigma_max: float, sigma_min: float, n_levels: int) -> list[float]:
+    """Arithmetically spaced noise levels, high to low: uniform in ``sigma``.
+
+    The naive schedule, included as the comparison :func:`geometric_sigmas`'
+    docstring argues against. Uniform spacing in ``sigma`` means the *ratio*
+    between adjacent levels blows up at the fine end -- on this repo's range
+    ``[0.05, 8]`` at 17 levels the last two levels differ by a factor of 11,
+    where the geometric ladder holds every ratio at 1.4 -- so the state arriving
+    from level ``i`` is a poor initialization for level ``i-1`` exactly where
+    the density is sharpest.
+
+    That is an argument about *equilibrium* samplers, though, which is why it is
+    worth measuring rather than asserting: the ancestral sampler and the PF-ODE
+    visit each level once and never re-equilibrate, so the overlap condition it
+    rests on is not obviously the one that binds for them.
+    ``experiments/schedules.py`` runs all three ladders through both.
+    """
+    return _warped_ladder(sigma_max, sigma_min, n_levels, lambda s: s, lambda u: u)
+
+
+def cosine_sigmas(sigma_max: float, sigma_min: float, n_levels: int) -> list[float]:
+    r"""Nichol & Dhariwal's cosine schedule, on this repo's variance-exploding range.
+
+    The cosine schedule is defined for the variance-*preserving* process, as
+    ``alphabar(u) = cos^2(pi u / 2)`` for ``u`` in ``[0, 1]``. Translating it
+    costs one line. A VP state is
+
+        ``x_u = sqrt(alphabar) x_0 + sqrt(1 - alphabar) eps
+             = sqrt(alphabar) (x_0 + sigma eps)``,   ``sigma^2 = (1 - alphabar)/alphabar``,
+
+    i.e. VP is VE followed by a rescaling that does not change the *shape* of
+    the distribution, only its scale. So the cosine schedule's noise levels are
+
+        ``sigma(u) = sqrt(sin^2 / cos^2) = tan(pi u / 2)``,
+
+    and since ``u`` is uniform, **the cosine schedule is uniform spacing in
+    ``arctan(sigma)``**. That is the form used here, anchored to the repo's own
+    ``[sigma_min, sigma_max]`` rather than to ``u in [0, 1]`` (whose endpoints
+    are 0 and infinity, neither of which a network conditioned on ``log sigma``
+    can be evaluated at).
+
+    Between the other two: ``arctan`` is nearly linear for ``sigma << 1`` and
+    saturates for ``sigma >> 1``, so relative to :func:`geometric_sigmas` it
+    moves nodes *away* from the fine end and toward the middle of the range.
+    Whether that helps is exactly what ``experiments/schedules.py`` measures.
+    """
+    return _warped_ladder(sigma_max, sigma_min, n_levels, math.atan, math.tan)
+
+
+#: The three ladders, by name -- what ``experiments/schedules.py`` sweeps over.
+#: Each is uniform spacing in a different warp of ``sigma``: ``log`` (geometric,
+#: this repo's default), the identity (linear), and ``arctan`` (cosine).
+SIGMA_SCHEDULES = {
+    "geometric": geometric_sigmas,
+    "linear": linear_sigmas,
+    "cosine": cosine_sigmas,
+}
+
+
+def sigma_ladder(name: str, sigma_max: float, sigma_min: float, n_levels: int) -> list[float]:
+    """Build a ladder by schedule name. Raises on an unknown name, listing the known ones."""
+    try:
+        builder = SIGMA_SCHEDULES[name]
+    except KeyError:
+        raise ValueError(
+            f"unknown schedule {name!r}; known: {sorted(SIGMA_SCHEDULES)}"
+        ) from None
+    return builder(sigma_max, sigma_min, n_levels)
 
 
 def unadjusted_langevin(
