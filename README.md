@@ -1,10 +1,21 @@
 # diffusion-from-scratch
 
-**Work in progress.** Scaffold and core; the full README (measured results,
-figures, limitations) lands when the repo is finished.
+![ci](https://github.com/porth-bot/diffusion-from-scratch/actions/workflows/ci.yml/badge.svg)
 
 Score-based generative modeling built from the score outward, in PyTorch, on
 2D targets whose scores are known in **closed form**.
+
+![score fields](figures/score_fields.png)
+
+*The object a diffusion model estimates, and the estimate, side by side. Rows
+are noise levels — $\sigma = 4$, $1$, $0.2$ — of an 8-mode ring mixture. Left
+is the **exact** score of the noised density $p_\sigma$, which is available
+here because a Gaussian mixture stays a Gaussian mixture when noised; middle
+is what an 87k-parameter network learned by denoising score matching; right is
+the error, normalized by that level's mean $\\|s\\|$. The learned field is not
+a picture that looks about right — it is wrong by a measurable amount, and the
+amount is worst at the **fine** level, exactly where the training loss looks
+best. Everything below is that observation, taken seriously.*
 
 A diffusion model is an estimate of one object:
 
@@ -22,7 +33,7 @@ can be run with the exact score as a control, which separates score-estimation
 error from discretization error. Neither check exists on an image dataset.
 That is why the toys are the point and not a shortcut.
 
-## What is here so far
+## Core modules
 
 | Module | Contents |
 | --- | --- |
@@ -427,10 +438,128 @@ Metropolis ratio, so the accept step is unavailable in principle.
 
 ## Reproduce
 
+Every figure, from a clean clone, without training or sampling anything:
+
 ```bash
-python -m venv .venv && ./.venv/bin/pip install -e ".[dev]"
-./.venv/bin/pytest -q
+python -m venv .venv && source .venv/bin/activate
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements.txt && pip install -e .
+./reproduce.sh                  # 207 tests, then all 8 figures: under a minute
 ```
+
+Running this repo end to end is about an hour of CPU — the sampler sweep alone
+draws 16,000 samples per arm across eight arms and six ladder refinements — so
+the artifacts ship with it: CSV sweeps and JSON summaries in `logs/`, the
+trained score network in `logs/score_net.pt`, and the sample tensors the cloud
+figures are pictures of. The split matters: a figure of a *number* rebuilds
+from a sweep log, but a figure of a *cloud* or of a *field* is a picture of
+actual draws and of the network itself, and only the tensors and the weights
+reproduce those. Each experiment takes `--figures` to replay its own.
+
+`tests/test_reproduction.py` is what keeps that claim true rather than
+aspirational: every artifact the replay reads must be **tracked by git**
+(sitting in the working tree is not the same thing), and the committed weights
+must still load into the `ScoreNet` the code builds today — a break that
+retraining would silently paper over, since training rewrites the file it
+would have failed on.
+
+`requirements.txt` pins the exact versions the committed artifacts were
+produced with (Python 3.12.13, torch 2.13.0); `pyproject.toml` keeps lower
+bounds, which is what CI installs on 3.10 and 3.12. The replay is pure
+post-processing and is therefore exact — rerunning it leaves the working tree
+clean. Recomputation is seeded and replays on the same torch build, but torch
+guarantees no bitwise determinism across versions or hardware, which is why
+the artifacts are committed rather than regenerated on demand.
+
+To actually recompute:
+
+```bash
+python experiments/score_matching.py   # ~2 min   trains the score network
+python experiments/sampling.py         # ~20 min  8 sampler arms + ladder sweep
+python experiments/ode.py              # ~25 min  NFE sweep + likelihoods
+python experiments/schedules.py        # ~15 min  3 ladders x 5 budgets x 3 seeds
+```
+
+## Limitations / next
+
+- **2D toys, and that is the design.** Every number here exists because the
+  target's score is closed-form at every noise level. Nothing in this repo
+  transfers as a *result* to images or text: no claim is made about sample
+  quality on real data, and none of these networks (87k parameters, four
+  layers) would be a reasonable model of anything larger. What transfers is
+  the machinery and the way of checking it.
+- **One trained network.** The score-estimation numbers — the error tables,
+  the learned-score rows in every sampler comparison, the 0.0585-nat
+  likelihood gap — come from a single training run (seed 0, 60k steps). The
+  sampler and schedule comparisons vary the sampler and the ladder against
+  that fixed network, which is the right control for *those* questions, but
+  none of the learned-score numbers carries a training-seed error bar. The
+  exact-score arms have no such caveat.
+- **`TwoMoons` is a tested density, not an experimental target.** It is a
+  genuinely normalized density in polar coordinates with an analytic score,
+  and it is checked against the finite-difference oracle — but it is not
+  closed under noising, so it cannot supply ground truth at intermediate
+  levels, which is what every experiment here needs. The experiments all run
+  on the ring mixture for that reason.
+- **No conditioning and no guidance.** Classifier-free guidance, and
+  conditional generation on the mixture component, are the obvious next thing
+  a target with labeled components makes measurable.
+- **Fast samplers stop at RK4.** The ODE side compares Euler and RK4 at
+  matched score evaluations; Heun/EDM-style solvers, DDIM, and distillation
+  are not here. On this target the flow is resolved by ~40 evaluations
+  anyway, so the study that would justify them is one on a harder target.
+- **Hutchinson is measured, not needed.** At $d = 2$ the exact divergence
+  costs two backward passes and beats the estimator by four orders of
+  magnitude at every probe count tried. It is included because that is what
+  the method actually uses in high dimension, and because its cost is worth
+  measuring rather than assuming.
+- **Float32 throughout.** The likelihood integration error reaches its noise
+  floor around $10^{-6}$ nats at 81 RK4 nodes; the 81-node column measures
+  the arithmetic, not the method.
+- **Variance-exploding only.** The forward process here has no drift.
+  Variance-preserving is a change of variables away (the cosine schedule is
+  derived through exactly that change in
+  [`diffusion/langevin.py`](diffusion/langevin.py)), but a VP-vs-VE
+  comparison is not run.
+
+## References
+
+Hyvärinen (2005) (score matching); Vincent (2011) (the denoising form, and
+the equivalence proof §3.3 rests on); Robbins (1956) / Efron (2011)
+(Tweedie's formula, and the curvature bound behind the step-size ceiling);
+Song & Ermon (2019, 2020) (annealed Langevin, the $\sigma^2$ weighting,
+ladder spacing); Ho, Jain & Abbeel (2020) (the ancestral sampler,
+$\epsilon$-prediction); Song et al. (2021) (the SDE framing, the
+probability-flow ODE, likelihoods); Anderson (1982) (the reverse-time SDE);
+Nichol & Dhariwal (2021) (the cosine schedule, rederived here for a
+variance-exploding process); Karras et al. (2022) ($\sigma$ as the clock);
+Chen et al. (2018) and Grathwohl et al. (2019) (instantaneous change of
+variables, FFJORD); Hutchinson (1989) (the trace estimator); Roberts &
+Tweedie (1996) (ULA's bias, MALA's correction). Full list with roles in
+[`theory/derivations.md`](theory/derivations.md).
+
+## Part of a from-scratch series
+
+Same bar in each: the core written out by hand, every non-obvious claim
+checked against a closed form or an independent oracle, limitations stated
+rather than buried.
+
+| Repo | Built from scratch |
+| --- | --- |
+| **diffusion-from-scratch** *(this repo)* | Score matching, reverse-time samplers, and the probability-flow ODE — against exact scores at every noise level |
+| [mcmc-from-scratch](https://github.com/porth-bot/mcmc-from-scratch) | Metropolis-Hastings, Gibbs, HMC, MALA, NUTS, parallel tempering — validated against exact posteriors |
+| [gp-from-scratch](https://github.com/porth-bot/gp-from-scratch) | GP regression, kernels with hand-derived gradients, ML-II, and the NTK/NNGP wide-network correspondence |
+| [pinn-from-scratch](https://github.com/porth-bot/pinn-from-scratch) | Physics-informed networks: exact autograd PDE residuals against closed-form solutions |
+| [grokking-transformer](https://github.com/porth-bot/grokking-transformer) | A transformer that groks modular arithmetic, and the Fourier circuit it learns |
+
+The load-bearing link is to mcmc-from-scratch, and it is a shared sampler
+rather than a shared theme: the Langevin update here *is* that repo's MALA
+proposal with the accept step deleted, the deletion is forced (a learned score
+gives no density to put in a Metropolis ratio), and both repos measure the
+same closed-form ULA bias. The annealing that makes the biased sampler work is
+the same idea as its parallel tempering, applied to noise levels instead of
+temperatures — and the failure it fixes, a chain trapped in one mode, is
+measured on both sides.
 
 ## Provenance
 
@@ -439,6 +568,9 @@ work. Every derivation is written out — in the module docstrings and, at
 length, in [`theory/derivations.md`](theory/derivations.md) — and every
 non-obvious claim is tested against a closed-form or independently computed
 ground truth rather than taken on faith.
+
+*Suggested GitHub topics:* `diffusion-models` `score-matching`
+`generative-models` `sde` `langevin-dynamics` `pytorch` `from-scratch`
 
 ## License
 
