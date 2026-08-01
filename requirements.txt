@@ -1,0 +1,23 @@
+# Exact environment the committed logs, weights, and README numbers were
+# produced in (Python 3.12.13, CPU). Install with:
+#
+#     python -m venv .venv && ./.venv/bin/pip install -r requirements.txt -e .
+#
+# and reproduce.sh replays every figure from the committed artifacts.
+#
+# pyproject.toml deliberately keeps LOWER BOUNDS instead (torch>=2.0, ...):
+# that is the library's compatibility contract, and CI installs from it (with
+# the CPU torch wheel) so the 3.10/3.12 matrix keeps testing against current
+# releases. This file is the reproduction lockfile; the two jobs are different,
+# so the two files differ. Transitive dependencies are left to pip.
+#
+# NOTE ON EXACT REPRODUCTION: the figure replay is pure post-processing of
+# committed files and is exact. Training and sampling are seeded and replay
+# bit-for-bit on the same torch build and CPU, but torch guarantees no
+# cross-version or cross-hardware bitwise determinism -- which is why the
+# trained score network (logs/score_net.pt), the sample tensors, and the CSV
+# sweeps are committed rather than regenerated on demand.
+torch==2.13.0
+numpy==2.5.1
+matplotlib==3.11.1
+pytest==9.1.1
