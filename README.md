@@ -74,6 +74,15 @@ The fine end is the worst, which the $-\epsilon_\theta/\sigma$
 parameterization predicts: any error in $\epsilon_\theta$ is amplified by
 $1/\sigma$ precisely where the loss looks best.
 
+![score error vs sigma](figures/score_error_vs_sigma.png)
+
+*The table above, at every level of the ladder rather than five of them. Left:
+relative MSE against the exact noised score, climbing an order of magnitude as
+$\sigma$ falls — the error is a property of where on the ladder you look, not a
+single number. Right: the two cosines. They agree at the coarse end and split
+below $\sigma \approx 1$, and the plain mean's dip near $\sigma = 2$ is the
+measurement trap two sections down, not a defect of the model.*
+
 ### The training loss cannot tell you when to stop
 
 The DSM loss does not go to zero. Its floor is
@@ -91,6 +100,16 @@ informative: excess risk falls from $0.025$ at step 2k to $0.0093$ at 60k
 while the true relative score error falls 4.5×. This is the concrete payoff
 of a target with a known score, and it is why the repo reports error against
 truth rather than a loss curve.
+
+![training curves](figures/score_matching_training.png)
+
+*The same run, read three ways. Left: the DSM loss, flat against its exact
+optimum (dashed) from ~2k steps on, with one minibatch's noise swamping the
+remaining excess. Middle: subtract the optimum and the excess risk is still
+falling at 60k steps — under the dotted line marking the sd of a single
+minibatch loss, i.e. entirely inside what the left panel could never have
+resolved. Right: the quantity that actually matters, error against the exact
+score, falling over the same stretch the loss called finished.*
 
 ### One measurement trap, recorded
 
