@@ -111,6 +111,60 @@ minibatch loss, i.e. entirely inside what the left panel could never have
 resolved. Right: the quantity that actually matters, error against the exact
 score, falling over the same stretch the loss called finished.*
 
+### Averaging the weights is worth more than the last 15k steps of training
+
+Every diffusion codebase keeps an EMA of its weights and none of them shows
+the number, so here it is. The comparison is *paired*: the shadow never feeds
+back into the gradient, so the raw arm of an EMA run is bit-for-bit the run
+you would have got with the average off (asserted in
+[`tests/test_ema.py`](tests/test_ema.py)), and the two arms are the same run
+evaluated twice. 20k steps, five seeds, relative MSE against the exact noised
+score.
+
+| EMA decay $d$ | raw | EMA | ratio | seeds EMA wins |
+|---|---|---|---|---|
+| 0.99   | $0.0906 \pm 0.0387$ | $0.0230 \pm 0.0045$ | 0.25 | 5/5 |
+| 0.999  | $0.0906 \pm 0.0387$ | $0.0143 \pm 0.0022$ | 0.16 | 5/5 |
+| 0.9995 | $0.0906 \pm 0.0387$ | $0.0155 \pm 0.0019$ | 0.17 | 5/5 |
+| 0.9999 | $0.0906 \pm 0.0387$ | $0.0156 \pm 0.0020$ | 0.17 | 5/5 |
+
+A 6.3× lower score error at $d = 0.999$, and — the part a single-seed
+comparison cannot see — a **17× smaller seed-to-seed spread**. The raw arm's
+sd is 43% of its own mean; the EMA arm's is 16% of a mean six times smaller.
+The worst raw seed (0.150) is worse than the best (0.061) by more than the
+entire raw-to-EMA gap, so on this problem *which seed you drew* matters more
+than 15k of the 20k training steps, and averaging removes both.
+
+![EMA ablation](figures/ema_ablation.png)
+
+*Left: median over five seeds, raw weights in black with the seed range
+shaded. The raw curve stops improving around step 5k and then wanders inside
+a band it never leaves — the jitter EMA is there to remove. Right: final
+error, error bars the seed sd.*
+
+**What did not happen, and it is the thing this was written to find.** The
+standard caution is that an EMA lags: while the weights are still travelling,
+averaging them averages worse parameters, so a decay long relative to the run
+should lose. The crossover is at the second evaluation (step 500 of 20,000)
+for *every* decay tried, including $d = 0.9999$, whose nominal averaging
+window is half the run. Only the step-1 checkpoint, where the shadow is still
+mostly initialization, is genuinely worse.
+
+**The caveat that limits how far the top of that table generalizes.** The
+warmup correction $d_t = \min(d,\ (1+t)/(10+t))$ reaches $d$ only at
+$t = (10d-1)/(1-d)$: step 8,990 for $0.999$, step 17,990 for $0.9995$, and
+*never* inside 20k steps for $0.9999$ — which at step 20,000 is still being
+run at $0.99955$. So the three largest arms were executing nearly the same
+schedule, and their agreement is a fact about the warmup ramp, not evidence
+that the decay stops mattering above $0.999$. Separating them needs a longer
+run than this one.
+
+The variance argument in [`diffusion/ema.py`](diffusion/ema.py) predicts a
+variance reduction of $(1-d)/(1+d) = 5\times10^{-4}$ at $d=0.999$ under
+i.i.d. jitter. The measured reduction is $3.4\times10^{-3}$ — seven times
+short of the bound, which is what positively-correlated Adam iterates should
+do to it. The bound is a bound.
+
 ### One measurement trap, recorded
 
 The plain mean cosine dips to 0.955 mid-ladder. That is not the model: at
@@ -513,7 +567,17 @@ python experiments/schedules.py        # ~15 min  3 ladders x 5 budgets x 3 seed
   sampler and schedule comparisons vary the sampler and the ladder against
   that fixed network, which is the right control for *those* questions, but
   none of the learned-score numbers carries a training-seed error bar. The
-  exact-score arms have no such caveat.
+  exact-score arms have no such caveat. The EMA ablation is the one place with
+  five seeds, and what it found there is worth carrying back: at 20k steps the
+  seed sd of the score error is 43% of its mean, so a single-seed learned-score
+  number in this repo is worth about that much.
+- **The shipped network has no EMA, and it should.** `logs/score_net.pt` is
+  raw weights from a single 60k-step run, because it was trained before
+  `diffusion/ema.py` existed. The ablation says averaging would cut its score
+  error several-fold at no training cost — so every learned-score number here
+  is a floor on what this architecture and budget can do, not the best of it.
+  Retraining and re-deriving the downstream sampler and likelihood numbers is
+  a bigger change than adding the ablation was, and it has not been done.
 - **`TwoMoons` is a tested density, not an experimental target.** It is a
   genuinely normalized density in polar coordinates with an analytic score,
   and it is checked against the finite-difference oracle — but it is not

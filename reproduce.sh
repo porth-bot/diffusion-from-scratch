@@ -75,6 +75,7 @@ step "score fields, score error vs sigma, training curve" experiments/score_matc
 step "samples, sampler accuracy vs budget" experiments/sampling.py --figures
 step "SDE vs ODE, likelihoods" experiments/ode.py --figures
 step "noise schedules" experiments/schedules.py --figures
+step "EMA-of-weights ablation" experiments/ema.py --figures
 
 echo
 echo "=================================================================="

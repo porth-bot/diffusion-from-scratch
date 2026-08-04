@@ -59,6 +59,10 @@ REPLAY_ARTIFACTS = {
         "logs/schedules.json",
         "logs/sampling.json",
     ],
+    "ema.py": [
+        "logs/ema_ablation.csv",
+        "logs/ema.json",
+    ],
 }
 
 FIGURES = [
@@ -70,6 +74,7 @@ FIGURES = [
     "figures/ode_vs_sde.png",
     "figures/ode_likelihood.png",
     "figures/schedules.png",
+    "figures/ema_ablation.png",
 ]
 
 

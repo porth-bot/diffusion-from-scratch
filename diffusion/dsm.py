@@ -125,6 +125,7 @@ from typing import Callable, Sequence
 
 import torch
 
+from diffusion.ema import EMA
 from diffusion.model import ScoreNet
 from diffusion.targets import Target
 
@@ -448,6 +449,16 @@ class TrainHistory:
     eval_cosine: list[float] = field(default_factory=list)
     eval_loss: list[float] = field(default_factory=list)
     seconds: float = 0.0
+    #: Same evaluations under the EMA weights, populated only when
+    #: ``train_score_model`` was given an ``ema_decay``. Kept alongside the raw
+    #: columns rather than replacing them so the ablation is a paired
+    #: comparison on one run, not two runs that also differ by their seed.
+    ema_relative_mse: list[float] = field(default_factory=list)
+    ema_cosine: list[float] = field(default_factory=list)
+    ema_loss: list[float] = field(default_factory=list)
+    #: The averager itself, so the caller can apply the averaged weights (or
+    #: not) after the run. ``None`` when EMA was off.
+    ema: "EMA | None" = None
 
 
 def train_score_model(
@@ -465,6 +476,8 @@ def train_score_model(
     eval_points: int = 2048,
     eval_batch: EvalBatch | None = None,
     progress: bool = False,
+    ema_decay: float | None = None,
+    ema_warmup: bool = True,
 ) -> TrainHistory:
     """Fit ``model`` by DSM on fresh draws from ``target``. Adam, no schedule.
 
@@ -476,12 +489,23 @@ def train_score_model(
     With ``eval_every > 0`` the model is scored against the exact noised score
     on a *fixed* evaluation set (same seed each time, so the eval is a
     deterministic function of the parameters and its trend is not noise).
+
+    ``ema_decay`` turns on an exponential moving average of the weights
+    (``diffusion/ema.py``). It changes nothing about the optimization -- the
+    shadow never feeds back into the gradient -- so the raw arm of the paired
+    comparison is bit-for-bit the run you would have got without it. The eval
+    is then done twice per checkpoint, once under each set of weights, and
+    both land in ``TrainHistory``. On return, ``model`` still holds the raw
+    weights; the average is in ``history.ema``, to be applied deliberately
+    rather than by side effect.
     """
     if eval_every and eval_sigmas is None:
         eval_sigmas = [sigma_min, math.sqrt(sigma_min * sigma_max), sigma_max]
     gen = torch.Generator().manual_seed(seed)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     history = TrainHistory()
+    if ema_decay is not None:
+        history.ema = EMA(model, decay=ema_decay, warmup=ema_warmup)
     t0 = time.perf_counter()
     for step in range(1, n_steps + 1):
         x0 = target.sample(batch_size, generator=gen)
@@ -490,6 +514,8 @@ def train_score_model(
         opt.zero_grad(set_to_none=True)
         loss.backward()
         opt.step()
+        if history.ema is not None:
+            history.ema.update(model)
         if step % log_every == 0 or step == 1:
             history.steps.append(step)
             history.loss.append(float(loss.detach()))
@@ -497,17 +523,34 @@ def train_score_model(
                 print(f"  step {step:6d}  loss {float(loss.detach()):.4f}", flush=True)
         if eval_every and (step % eval_every == 0 or step == 1):
             assert eval_sigmas is not None
-            diag = score_diagnostics(
-                model,
-                target,
-                eval_sigmas,
-                n_points=eval_points,
-                generator=torch.Generator().manual_seed(12345),
-            )
+
+            def _evaluate() -> tuple[float, float, float | None]:
+                diag = score_diagnostics(
+                    model,
+                    target,
+                    eval_sigmas,
+                    n_points=eval_points,
+                    generator=torch.Generator().manual_seed(12345),
+                )
+                n = len(diag.relative_mse)
+                return (
+                    sum(diag.relative_mse) / n,
+                    sum(diag.cosine) / n,
+                    eval_dsm_loss(model, eval_batch) if eval_batch is not None else None,
+                )
+
             history.eval_steps.append(step)
-            history.eval_relative_mse.append(sum(diag.relative_mse) / len(diag.relative_mse))
-            history.eval_cosine.append(sum(diag.cosine) / len(diag.cosine))
-            if eval_batch is not None:
-                history.eval_loss.append(eval_dsm_loss(model, eval_batch))
+            rel, cos, dsm = _evaluate()
+            history.eval_relative_mse.append(rel)
+            history.eval_cosine.append(cos)
+            if dsm is not None:
+                history.eval_loss.append(dsm)
+            if history.ema is not None:
+                with history.ema.swapped(model):
+                    rel, cos, dsm = _evaluate()
+                history.ema_relative_mse.append(rel)
+                history.ema_cosine.append(cos)
+                if dsm is not None:
+                    history.ema_loss.append(dsm)
     history.seconds = time.perf_counter() - t0
     return history
