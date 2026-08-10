@@ -41,6 +41,7 @@ That is why the toys are the point and not a shortcut.
 | [`diffusion/langevin.py`](diffusion/langevin.py) | Unadjusted Langevin, and Song & Ermon's annealed Langevin with the $\tau_i \propto \sigma_i^2$ step-size schedule and the stability bound that schedule implies; plus the three noise ladders (geometric, linear, and the cosine schedule rederived for a variance-exploding process) |
 | [`diffusion/model.py`](diffusion/model.py) | The score network: an MLP conditioned on $\log\sigma$ through a written-out sinusoidal embedding, with the score formed as $-\epsilon_\theta/\sigma$ so the learned object is unit-scale at every noise level |
 | [`diffusion/dsm.py`](diffusion/dsm.py) | Denoising score matching (Vincent 2011) with its equivalence proof, the $\sigma^2$ weighting that collapses it to $\\|\epsilon_\theta - \epsilon\\|^2$, per-level diagnostics against the exact score, and the loss's irreducible floor |
+| [`diffusion/vp.py`](diffusion/vp.py) | The variance-preserving process as the SNR-matched rescaling of this repo's variance-exploding one, its score and Tweedie by the Jacobian, DDPM's ancestral update derived in $\bar\alpha$ and $\beta$ (which collapses onto the VE sampler exactly), and the prior-variance accounting that is the only place the two conventions differ |
 | [`diffusion/samplers.py`](diffusion/samplers.py) | Ancestral (DDPM) sampling down the ladder, derived for this repo's variance-exploding chain, with the closed-form variance it returns on a Gaussian target — including the deficit a coarse ladder is *supposed* to have |
 | [`diffusion/metrics.py`](diffusion/metrics.py) | Two-sample metrics written out: RBF-kernel MMD with a permutation test, sliced Wasserstein, and the exact value each takes on Gaussians |
 | [`diffusion/ode.py`](diffusion/ode.py) | The probability-flow ODE with $\sigma$ as the clock, a written-out RK4 (measured fourth-order), and likelihoods by instantaneous change of variables with a Hutchinson trace estimator — plus the exact flow on a Gaussian, which is what the solver is tested against |
@@ -433,6 +434,88 @@ times as much.
 On this target the schedule is a knob worth setting sensibly once and then
 leaving alone.
 
+### VP and VE are one chain in two coordinate systems
+
+![vp vs ve](figures/vp_ve.png)
+
+The cosine schedule above arrives through a rescaling
+$\sqrt{\bar\alpha}(x_0 + \sigma\varepsilon)$, and it is worth asking how far
+that rescaling goes. All the way, it turns out.
+[`diffusion/vp.py`](diffusion/vp.py) matches the two processes at the
+signal-to-noise ratio, $\sigma^2 = (1-\bar\alpha)/\bar\alpha$, and then for the
+*same* $x_0$ and the *same* $\varepsilon$ the VP state is exactly
+$\sqrt{\bar\alpha}$ times the VE state — pathwise, not in distribution.
+Deriving DDPM's ancestral update in $\bar\alpha$ and $\beta$ and substituting,
+$\beta_i/\bar\alpha_i = \sigma_i^2 - \sigma_{i-1}^2$ and
+$\tilde\beta_i = \bar\alpha_{i-1}\,\sigma_{i-1}^2(\sigma_i^2 -
+\sigma_{i-1}^2)/\sigma_i^2$, so mean *and* noise pick up the same factor and
+the two samplers are the same chain.
+
+`ddpm_ancestral_vp` shares no code with `ddpm_ancestral` on purpose, so this is
+a claim about the algebra and not about an implementation. Driven with
+identical noise draws the two trajectories agree to $10^{-11}$ in float64
+(`tests/test_vp.py`) and to $2\times10^{-4}$ on states of size 5.2 in the
+experiment's float32 — rounding, not a difference. **So the choice of process
+is not a modelling choice**, and everything this repo measured under VE
+transfers.
+
+**One thing does not transfer: the prior.** Push VE's
+$N(0,\sigma_{\max}^2 I)$ through the rescaling and it becomes
+$N(0,(1-\bar\alpha_{\max})I)$, not the $N(0,I)$ that VP conventionally starts
+from. For data of per-coordinate variance $v$:
+
+| | assumed prior | wrong by | at $\sigma_{\max}=2$, $v=1$ |
+| --- | --- | --- | ---: |
+| VE | $N(0,\sigma_{\max}^2 I)$ | $1 + v/\sigma_{\max}^2$, always | 0.800 |
+| VP | $N(0,I)$ | $1 + \bar\alpha_{\max}(v-1)$ | **1.000** |
+
+That is the whole content of "variance preserving": not a better process, a
+convention that is exact on standardized data. It is also *only* that — on this
+repo's own ring target, whose per-coordinate variance is
+$r^2/2 + s^2 = 8.16$ and was never standardized, VP's prior ratio at
+$\sigma_{\max}=2$ is 0.411 against VE's 0.329. Both badly wrong, one slightly
+less so.
+
+And then the size of it, which is the useful part.
+[`experiments/vp_ve.py`](experiments/vp_ve.py) samples both conventions at 200
+levels, three prior draws per cell, sliced $W_2$ against an exact draw:
+
+| exact score | $\sigma_{\max}$ 2 | 3 | 5 | 8 | 16 | 32 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| ring, standardized, VP − VE | +0.0007 | −0.0001 | +0.0003 | +0.0001 | −0.0000 | +0.0000 |
+| ring ($v=8.16$), VP − VE | −0.0020 | −0.0013 | −0.0007 | +0.0003 | +0.0000 | −0.0000 |
+| ring, learned score, VP − VE | −0.0088 | −0.0004 | −0.0009 | +0.0003 | +0.0000 | +0.0000 |
+
+Against a floor of 0.023 (standardized) and 0.066 (ring) between two exact draws
+of the same size, **no cell resolves**: the largest gap anywhere is 13% of the
+floor, and it is at $\sigma_{\max}=2$ under a learned score, where the VE prior's
+variance is 20% short. A 20%-wrong prior variance is invisible after 200 levels.
+
+The closed-form accounting on a Gaussian says why. The two priors differ by
+exactly 1.0 of variance, and that difference reaches the output multiplied by
+the chain's contraction — the same multiplier whatever the ladder does, since
+it does not depend on where the chain started:
+
+| unit Gaussian | 8 levels | 64 | 256 |
+| --- | ---: | ---: | ---: |
+| prior contribution, $\sigma_{\max}=3$ | 0.0100 | 0.0100 | 0.0100 |
+| ladder deficit, $\sigma_{\max}=3$ | 0.406 | 0.064 | 0.018 |
+| prior contribution, $\sigma_{\max}=8$ | 0.00024 | 0.00024 | 0.00024 |
+| ladder deficit, $\sigma_{\max}=8$ | 0.473 | 0.079 | 0.022 |
+
+The prior is worth 2.5% of the ladder error at $\sigma_{\max}=3$ and 8 levels,
+0.05% at $\sigma_{\max}=8$. It only becomes comparable at $\sigma_{\max}=3$ with
+256 levels (55%) — a short top of ladder *and* a very fine one, which is not a
+configuration anyone reaches by accident.
+
+The honest summary is that the VP/VE distinction, as a distinction between
+*processes*, is empty, and as a distinction between *priors* it is real,
+computable, and dominated. What it is not is tested here: a network **trained**
+in VP coordinates, which is the argument that actually motivates VP — the model
+sees $O(1)$ inputs at every level instead of inputs spanning
+$[\sigma_{\min},\sigma_{\max}]$. That is a claim about conditioning and
+preconditioning, it needs a second training run, and nothing above speaks to it.
+
 ## Likelihoods, checked against a closed form
 
 ![ODE likelihood](figures/ode_likelihood.png)
@@ -517,7 +600,7 @@ Every figure, from a clean clone, without training or sampling anything:
 python -m venv .venv && source .venv/bin/activate
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt && pip install -e .
-./reproduce.sh                  # 207 tests, then all 8 figures: under a minute
+./reproduce.sh                  # 245 tests, then all 10 figures: under a minute
 ```
 
 Running this repo end to end is about an hour of CPU — the sampler sweep alone
@@ -551,6 +634,7 @@ python experiments/score_matching.py   # ~2 min   trains the score network
 python experiments/sampling.py         # ~20 min  8 sampler arms + ladder sweep
 python experiments/ode.py              # ~25 min  NFE sweep + likelihoods
 python experiments/schedules.py        # ~15 min  3 ladders x 5 budgets x 3 seeds
+python experiments/vp_ve.py            # ~2 min   VP vs VE: 2 targets x 6 sigma_max
 ```
 
 ## Limitations / next
@@ -599,11 +683,12 @@ python experiments/schedules.py        # ~15 min  3 ladders x 5 budgets x 3 seed
 - **Float32 throughout.** The likelihood integration error reaches its noise
   floor around $10^{-6}$ nats at 81 RK4 nodes; the 81-node column measures
   the arithmetic, not the method.
-- **Variance-exploding only.** The forward process here has no drift.
-  Variance-preserving is a change of variables away (the cosine schedule is
-  derived through exactly that change in
-  [`diffusion/langevin.py`](diffusion/langevin.py)), but a VP-vs-VE
-  comparison is not run.
+- **Variance-exploding only, and now measured to be enough.** The forward
+  process here has no drift. Variance-preserving turned out to be a change of
+  variables *exactly* -- same chain, pathwise
+  ([`diffusion/vp.py`](diffusion/vp.py)) -- so the remaining gap is not the
+  process but the network: nothing here trains a model in VP coordinates, which
+  is where the O(1)-input argument for VP would actually be tested.
 
 ## References
 

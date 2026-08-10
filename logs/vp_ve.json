@@ -1,0 +1,14 @@
+{
+  "pathwise": {
+    "max_abs_gap": 0.00020122528076171875,
+    "state_scale": 5.223337173461914
+  },
+  "ring_var": 8.16,
+  "floors": {
+    "ring": 0.06580548966427911,
+    "ring_standardized": 0.02303652942548123
+  },
+  "n_samples": 8000,
+  "n_levels": 200,
+  "seconds": 124.4
+}

@@ -26,6 +26,7 @@
 #     python experiments/sampling.py         # ~20 min (8 arms + ladder sweep)
 #     python experiments/ode.py              # ~25 min (NFE sweep + likelihoods)
 #     python experiments/schedules.py        # ~15 min (3 ladders x 5 budgets x 3 seeds)
+#     python experiments/vp_ve.py            # ~2 min  (VP vs VE prior sweep)
 #
 # Determinism: the replay is pure post-processing of committed files, so it is
 # exact -- rerunning it leaves the working tree clean. Recomputation is seeded
@@ -76,6 +77,7 @@ step "samples, sampler accuracy vs budget" experiments/sampling.py --figures
 step "SDE vs ODE, likelihoods" experiments/ode.py --figures
 step "noise schedules" experiments/schedules.py --figures
 step "EMA-of-weights ablation" experiments/ema.py --figures
+step "VP vs VE: one chain, two coordinate systems" experiments/vp_ve.py --figures
 
 echo
 echo "=================================================================="

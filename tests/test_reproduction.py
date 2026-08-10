@@ -63,6 +63,11 @@ REPLAY_ARTIFACTS = {
         "logs/ema_ablation.csv",
         "logs/ema.json",
     ],
+    "vp_ve.py": [
+        "logs/vp_ve_sweep.csv",
+        "logs/vp_ve_tradeoff.csv",
+        "logs/vp_ve.json",
+    ],
 }
 
 FIGURES = [
@@ -75,6 +80,7 @@ FIGURES = [
     "figures/ode_likelihood.png",
     "figures/schedules.png",
     "figures/ema_ablation.png",
+    "figures/vp_ve.png",
 ]
 
 
