@@ -1,0 +1,19 @@
+{
+  "component": 0,
+  "n_samples": 16000,
+  "seed": 0,
+  "ddpm_levels": 200,
+  "langevin_levels": 40,
+  "langevin_steps_per_level": 200,
+  "langevin_tau": 0.002,
+  "sigma_min": 0.05,
+  "sigma_max": 8.0,
+  "grid_half_width": 8.0,
+  "grid_resolution": 512,
+  "n_projections": 512,
+  "equilibration_control": {
+    "standard": 0.015335643792989023,
+    "doubled": 0.011575378111468219
+  },
+  "seconds": 1139.4051041603088
+}

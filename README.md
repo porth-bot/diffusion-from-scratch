@@ -516,6 +516,99 @@ sees $O(1)$ inputs at every level instead of inputs spanning
 $[\sigma_{\min},\sigma_{\max}]$. That is a claim about conditioning and
 preconditioning, it needs a second training run, and nothing above speaks to it.
 
+## Conditioning: what classifier-free guidance actually samples from
+
+![guidance](figures/guidance.png)
+
+The mixture's component index is a real label, and both conditionals are exact
+at every noise level, so classifier-free guidance can be built here with nothing
+learned:
+
+$$s_w(x,\sigma) = (1+w)\,\nabla\log p_\sigma(x\mid y{=}k) - w\,\nabla\log p_\sigma(x).$$
+
+That score is the gradient of $r_{w,\sigma} \propto p_\sigma(x\mid
+y{=}k)^{1+w}\,p_\sigma(x)^{-w}$ — checked by finite differences, not asserted —
+and at $\sigma = 0$ it is $q_w \propto p(x\mid y{=}k)^{1+w} p(x)^{-w}$, the
+sharpened conditional guidance is usually said to target. $q_w$ is available by
+2-D quadrature, so "does guidance sample from $q_w$?" is a measurement.
+Everything below runs both of this repo's samplers on the *same* guided scores,
+against exact draws from $q_w$, with the sliced-$W_2$ between two independent
+such draws as the floor.
+
+**First, the target does not move — which is a negative about guidance, not
+about the samplers.** Sliced $W_2$ between $q_w$ and $q_0$ is 0.0028, 0.0029,
+0.0033, 0.0038 at $w = 0.5, 1, 2, 4$, against a floor of 0.012–0.014. On a ring
+whose modes sit 7.7 component standard deviations apart, $p(x) \approx
+\tfrac18 p(x\mid y{=}k)$ everywhere the conditional has mass, so the ratio being
+raised to the power $w$ is a *constant* there and the tilt is a constant.
+**$q_w$ is $p(x\mid y{=}k)$ to the resolution available, at every weight tried:
+on a well-separated mixture the usual justification for guidance is describing
+something that does not happen.** Whatever guidance is doing on real data, it is
+not this.
+
+**But the samplers move a long way, and only one of them.** Same scores, same
+target that isn't moving:
+
+| $w$ | floor | ancestral $W_2$ | | annealed Langevin $W_2$ | |
+|---|---|---|---|---|---|
+| 0 | 0.0141 | 0.0194 | 1.4× | 0.0159 | 1.1× |
+| 0.5 | 0.0131 | 0.0364 | 2.8× | 0.0156 | 1.2× |
+| 1 | 0.0131 | 0.0577 | 4.4× | 0.0154 | 1.2× |
+| 2 | 0.0125 | 0.0878 | 7.0× | 0.0154 | 1.2× |
+| 4 | 0.0121 | **0.1275** | **10.5×** | 0.0153 | 1.3× |
+
+The one-pass sampler drifts away from $q_w$ monotonically; annealed Langevin
+does not, at any weight. And the Langevin arm's residual 1.3× is its budget, not
+a bias: doubling the steps per level at $w=4$ takes it from 0.0153 to **0.0116,
+below the 0.0121 floor** — indistinguishable from two exact draws.
+
+**Why**, and it is the same sentence this repo has now written three times. The
+family $r_{w,\sigma}$ is *not* the noising path of $q_w$: tilting and convolving
+do not commute. Annealed Langevin equilibrates at each level, so it is governed
+by the last level's stationary law and lands on $q_w$; ancestral sampling makes
+one pass and is exact only when its scores are the scores of a genuine noising
+path. Approximating the noised marginal by one isotropic Gaussian at the origin
+makes the guided drift affine, with root
+
+$$x^\* = \frac{(1+w)\,\mu_k}{(1+w) - w\rho_\sigma},\qquad
+\rho_\sigma = \frac{s^2+\sigma^2}{s^2+\sigma^2+R^2/2},$$
+
+whose two limits are the whole mechanism: $\rho \to 1$ at large $\sigma$ gives
+$x^\* \to (1+w)\mu_k$, so **the chain is aimed at a point $(1+w)$ times too far
+from the origin**, while $\rho \to s^2/(s^2+R^2/2) = 0.02$ at small $\sigma$
+brings the attractor back to $\mu_k$. A sampler that equilibrates forgets the
+early overshoot; a single pass carries part of it to the end.
+
+**And the drift is not the diversity collapse the folklore predicts.** Two
+read-outs that were supposed to show it, and do not:
+
+- *Purity* (fraction of draws nearest component $k$) is **1.0000 at every
+  weight, including $w=0$** — saturated by the separation, so it cannot
+  distinguish anything here. Reported because it is the number a reader would
+  expect to see, and it is uninformative.
+- *Width* is non-monotone and small: the ancestral rms distance from $\mu_k$
+  goes 0.392, 0.379, 0.378, 0.381, 0.391 over $w=0\ldots4$ against $q_w$'s
+  0.399. A 5% dip that comes back is not a collapse.
+
+What actually moves is the **radial position**. The ancestral mean sits at
+$-0.012$ from $\mu_k$ at $w=0$ — the same size as $q_w$'s own $+0.007$, i.e.
+nothing — and at $+0.181$ by $w=4$: 0.45 of a component standard deviation,
+straight outward along the ray the mechanism above predicts. Anchoring at $w=1$
+and extending the ancestral arm past the sweep:
+
+| $w$ | 0.5 | 1 | 2 | 4 | 8 | 16 |
+|---|---|---|---|---|---|---|
+| radial offset | 0.0449 | 0.0782 | 0.1231 | 0.1809 | 0.2520 | 0.3346 |
+| $\log(1+w)$ law | 0.0457 | — | 0.1239 | 0.1815 | 0.2478 | 0.3195 |
+| ratio | 0.98 | — | 0.99 | 1.00 | 1.02 | 1.05 |
+
+Within 2% out to $w=8$ and 5% at $w=16$, from a single anchor across a 32×
+range. **The log law is fitted, not derived**, and the honest version of that
+caveat is that integrating the attractor above uniformly over the ladder gives
+$\frac{1+w}{w}\log(1+w) - 1$, which has the right leading logarithm and
+over-predicts by 22% at $w=16$ — so the ladder's weighting is not uniform, and
+what is established is the mechanism and the measurements, not the exponent.
+
 ## Likelihoods, checked against a closed form
 
 ![ODE likelihood](figures/ode_likelihood.png)
@@ -600,7 +693,7 @@ Every figure, from a clean clone, without training or sampling anything:
 python -m venv .venv && source .venv/bin/activate
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt && pip install -e .
-./reproduce.sh                  # 245 tests, then all 10 figures: under a minute
+./reproduce.sh                  # 281 tests, then all 11 figures: under a minute
 ```
 
 Running this repo end to end is about an hour of CPU — the sampler sweep alone
@@ -635,6 +728,7 @@ python experiments/sampling.py         # ~20 min  8 sampler arms + ladder sweep
 python experiments/ode.py              # ~25 min  NFE sweep + likelihoods
 python experiments/schedules.py        # ~15 min  3 ladders x 5 budgets x 3 seeds
 python experiments/vp_ve.py            # ~2 min   VP vs VE: 2 targets x 6 sigma_max
+python experiments/guidance.py         # ~19 min  guidance: 5 weights x 2 samplers + controls
 ```
 
 ## Limitations / next
@@ -668,9 +762,16 @@ python experiments/vp_ve.py            # ~2 min   VP vs VE: 2 targets x 6 sigma_
   closed under noising, so it cannot supply ground truth at intermediate
   levels, which is what every experiment here needs. The experiments all run
   on the ring mixture for that reason.
-- **No conditioning and no guidance.** Classifier-free guidance, and
-  conditional generation on the mixture component, are the obvious next thing
-  a target with labeled components makes measurable.
+- **Guidance is measured, and the target it is measured against barely moves.**
+  Classifier-free guidance on the component label is now built (exactly, from
+  the analytic scores) and scored against the density it is said to target. The
+  finding that limits the section is its own: at 7.7 standard deviations of
+  separation the tilt is a constant where the conditional has mass, so
+  $q_w \approx p(x\mid y{=}k)$ at every weight and this target cannot exhibit
+  the sharpening guidance is for. Showing that half would need overlapping
+  components — a small radius or a wide $s$ — and that sweep is not run here.
+  What this target *can* show, and does, is the sampler-dependence: the
+  destination is fixed and the one-pass sampler still drifts 10× the floor.
 - **Fast samplers stop at RK4.** The ODE side compares Euler and RK4 at
   matched score evaluations; Heun/EDM-style solvers, DDIM, and distillation
   are not here. On this target the flow is resolved by ~40 evaluations
@@ -697,8 +798,8 @@ the equivalence proof §3.3 rests on); Robbins (1956) / Efron (2011)
 (Tweedie's formula, and the curvature bound behind the step-size ceiling);
 Song & Ermon (2019, 2020) (annealed Langevin, the $\sigma^2$ weighting,
 ladder spacing); Ho, Jain & Abbeel (2020) (the ancestral sampler,
-$\epsilon$-prediction); Song et al. (2021) (the SDE framing, the
-probability-flow ODE, likelihoods); Anderson (1982) (the reverse-time SDE);
+$\epsilon$-prediction); Ho & Salimans (2022) (classifier-free guidance);
+Song et al. (2021) (the SDE framing, the probability-flow ODE, likelihoods); Anderson (1982) (the reverse-time SDE);
 Nichol & Dhariwal (2021) (the cosine schedule, rederived here for a
 variance-exploding process); Karras et al. (2022) ($\sigma$ as the clock);
 Chen et al. (2018) and Grathwohl et al. (2019) (instantaneous change of

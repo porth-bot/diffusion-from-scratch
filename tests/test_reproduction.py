@@ -68,6 +68,12 @@ REPLAY_ARTIFACTS = {
         "logs/vp_ve_tradeoff.csv",
         "logs/vp_ve.json",
     ],
+    "guidance.py": [
+        "logs/guidance.csv",
+        "logs/guidance.json",
+        "logs/guidance_overshoot.csv",
+        "logs/guidance_clouds.pt",
+    ],
 }
 
 FIGURES = [
@@ -81,6 +87,7 @@ FIGURES = [
     "figures/schedules.png",
     "figures/ema_ablation.png",
     "figures/vp_ve.png",
+    "figures/guidance.png",
 ]
 
 
