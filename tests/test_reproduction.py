@@ -68,6 +68,10 @@ REPLAY_ARTIFACTS = {
         "logs/vp_ve_tradeoff.csv",
         "logs/vp_ve.json",
     ],
+    "vp_coords.py": [
+        "logs/vp_coords.csv",
+        "logs/vp_coords.json",
+    ],
     "guidance.py": [
         "logs/guidance.csv",
         "logs/guidance.json",
@@ -88,6 +92,7 @@ FIGURES = [
     "figures/ema_ablation.png",
     "figures/vp_ve.png",
     "figures/guidance.png",
+    "figures/vp_coords.png",
 ]
 
 

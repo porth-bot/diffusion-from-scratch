@@ -2,7 +2,7 @@
 #
 # Regenerate every figure in figures/ from the committed logs and weights.
 #
-#     ./reproduce.sh              # tests, then all 11 figures: well under a minute
+#     ./reproduce.sh              # tests, then all 12 figures: well under a minute
 #     PYTHON=/path/to/python ./reproduce.sh
 #
 # NO TRAINING AND NO SAMPLING happens here, and that is the point. Running this
@@ -27,6 +27,7 @@
 #     python experiments/ode.py              # ~25 min (NFE sweep + likelihoods)
 #     python experiments/schedules.py        # ~15 min (3 ladders x 5 budgets x 3 seeds)
 #     python experiments/vp_ve.py            # ~2 min  (VP vs VE prior sweep)
+#     python experiments/vp_coords.py --train  # ~35 min (40 paired training runs)
 #     python experiments/guidance.py         # ~19 min (classifier-free guidance sweep)
 #
 # Determinism: the replay is pure post-processing of committed files, so it is
@@ -80,6 +81,7 @@ step "noise schedules" experiments/schedules.py --figures
 step "EMA-of-weights ablation" experiments/ema.py --figures
 step "VP vs VE: one chain, two coordinate systems" experiments/vp_ve.py --figures
 step "classifier-free guidance: what it samples from" experiments/guidance.py --figures
+step "training in VP coordinates" experiments/vp_coords.py --figures
 
 echo
 echo "=================================================================="
