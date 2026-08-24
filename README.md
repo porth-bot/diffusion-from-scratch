@@ -41,7 +41,7 @@ That is why the toys are the point and not a shortcut.
 | [`diffusion/langevin.py`](diffusion/langevin.py) | Unadjusted Langevin, and Song & Ermon's annealed Langevin with the $\tau_i \propto \sigma_i^2$ step-size schedule and the stability bound that schedule implies; plus the three noise ladders (geometric, linear, and the cosine schedule rederived for a variance-exploding process) |
 | [`diffusion/model.py`](diffusion/model.py) | The score network: an MLP conditioned on $\log\sigma$ through a written-out sinusoidal embedding, with the score formed as $-\epsilon_\theta/\sigma$ so the learned object is unit-scale at every noise level |
 | [`diffusion/dsm.py`](diffusion/dsm.py) | Denoising score matching (Vincent 2011) with its equivalence proof, the $\sigma^2$ weighting that collapses it to $\\|\epsilon_\theta - \epsilon\\|^2$, per-level diagnostics against the exact score, and the loss's irreducible floor |
-| [`diffusion/vp.py`](diffusion/vp.py) | The variance-preserving process as the SNR-matched rescaling of this repo's variance-exploding one, its score and Tweedie by the Jacobian, DDPM's ancestral update derived in $\bar\alpha$ and $\beta$ (which collapses onto the VE sampler exactly), and the prior-variance accounting that is the only place the two conventions differ |
+| [`diffusion/vp.py`](diffusion/vp.py) | The variance-preserving process as the SNR-matched rescaling of this repo's variance-exploding one, its score and Tweedie by the Jacobian, DDPM's ancestral update derived in $\bar\alpha$ and $\beta$ (which collapses onto the VE sampler exactly), the prior-variance accounting that is the only place the two conventions differ, and the input-scale closed form plus the one-multiplication network that put the O(1)-input argument under measurement |
 | [`diffusion/samplers.py`](diffusion/samplers.py) | Ancestral (DDPM) sampling down the ladder, derived for this repo's variance-exploding chain, with the closed-form variance it returns on a Gaussian target — including the deficit a coarse ladder is *supposed* to have |
 | [`diffusion/metrics.py`](diffusion/metrics.py) | Two-sample metrics written out: RBF-kernel MMD with a permutation test, sliced Wasserstein, and the exact value each takes on Gaussians |
 | [`diffusion/ode.py`](diffusion/ode.py) | The probability-flow ODE with $\sigma$ as the clock, a written-out RK4 (measured fourth-order), and likelihoods by instantaneous change of variables with a Hutchinson trace estimator — plus the exact flow on a Gaussian, which is what the solver is tested against |
@@ -510,11 +510,113 @@ configuration anyone reaches by accident.
 
 The honest summary is that the VP/VE distinction, as a distinction between
 *processes*, is empty, and as a distinction between *priors* it is real,
-computable, and dominated. What it is not is tested here: a network **trained**
-in VP coordinates, which is the argument that actually motivates VP — the model
-sees $O(1)$ inputs at every level instead of inputs spanning
-$[\sigma_{\min},\sigma_{\max}]$. That is a claim about conditioning and
-preconditioning, it needs a second training run, and nothing above speaks to it.
+computable, and dominated. Neither of those touches the argument VP is usually
+made with, which is about the *network*: trained in VP coordinates it sees
+$O(1)$ inputs at every level instead of inputs spanning
+$[\sigma_{\min},\sigma_{\max}]$. That is a claim about conditioning, it needs
+a second training run, and the next section runs it.
+
+### Training in VP coordinates: the premise is conditional, and the effect is elsewhere
+
+![vp coordinates](figures/vp_coords.png)
+
+The premise is checkable before anything is trained. For data of per-coordinate
+variance $v$, the state at level $\sigma$ has per-coordinate standard deviation
+$\sqrt{v+\sigma^2}$ in VE coordinates and $\sqrt{(v+\sigma^2)/(1+\sigma^2)}$
+in VP, so:
+
+| | input sd across the ladder | span |
+| --- | --- | ---: |
+| VE, $v = 8.16$ (this repo's ring) | 2.857 → 8.495 | 2.97x |
+| VP, $v = 8.16$ | 2.853 → 1.054 | 2.71x |
+| VE, $v = 1$ (standardized) | 1.000 → 2.974 | 2.97x |
+| VP, $v = 1$ | 1.000 → 1.000 | **1.00x** |
+
+**VP inputs are $O(1)$ at every level only on standardized data.** Off it the
+span is the same size, pointed the other way — which is not what the argument
+says, and is why the experiment runs both targets.
+
+The comparison itself is unusually tight, because of the pathwise identity
+above: the VP state is the VE state times a per-level scalar and the regression
+target $\varepsilon$ is the *same draw* in both, so "train in VP coordinates"
+is exactly one multiplication at the network's input
+(`diffusion.vp.VPInputScoreNet`). The two arms of a cell therefore share their
+seed, their initial weights, their batches and their targets, and differ by
+that multiplication alone. Four cells, five paired seeds each, 8,000 steps,
+scored as relative score MSE on 13 levels
+([`experiments/vp_coords.py`](experiments/vp_coords.py)):
+
+| target, ladder | VE | VP | VP/VE | VP wins |
+| --- | ---: | ---: | ---: | ---: |
+| ring ($v=8.16$), full | 0.0771 [0.0569–0.0955] | 0.0619 [0.0497–0.0849] | 0.89x | 5/5 |
+| standardized, full | 0.0809 [0.0598–0.0943] | 0.0791 [0.0519–0.1073] | 1.05x | 2/5 |
+| ring, short ladder (16x) | 0.0157 [0.0129–0.0188] | 0.0155 [0.0114–0.0185] | 1.00x | 3/5 |
+| ring, shallow ($\sigma_{\max}/4$) | 0.0748 [0.0392–0.1002] | 0.0812 [0.0595–0.1165] | 1.01x | 2/5 |
+
+That aggregate is 41–47% *one level*: the error at the finest $\sigma$ is 44x
+the error at the coarsest, so a mean over the ladder is very nearly the error
+at $\sigma_{\min}$, where the two coordinate systems are identical
+($\bar\alpha \to 1$). Weighting every level equally instead — the per-seed
+geometric mean of the per-level ratio — is what the question actually asks:
+
+| target, ladder | VP/VE over the ladder | VP wins | at the coarsest level | VP wins |
+| --- | ---: | ---: | ---: | ---: |
+| ring, full | 0.78x | 5/5 | 0.53x | 5/5 |
+| standardized, full | 0.90x | 5/5 | 0.54x | 5/5 |
+| ring, short ladder | 0.81x | 4/5 | 0.44x | 4/5 |
+| ring, shallow | 0.95x | 3/5 | 0.85x | 3/5 |
+
+**So VP helps, and not for the stated reason.** Standardizing the data takes
+VP's input span from 2.71x to exactly 1.00x — the $O(1)$ ideal the argument is
+about — and it is where VP helps *least* of the three deep cells; at the
+coarsest level the two targets are indistinguishable (0.54 against 0.53) across
+an 8.2x change in $v$. Cutting the ladder from 160x to 16x with the coarse end
+untouched does nothing either. Both hypotheses the design was built around are
+refuted by their own controls.
+
+What is left is the noise level. The gain is concentrated above
+$\sigma \approx \mathrm{sd}(x_0)$ — below it the four cells run 0.92–0.99x,
+which at five paired seeds is at most a few percent and mostly nothing — and
+that region is also the tempting place to stop a ladder. The shallow cell, the
+only one that stops before it, is the only one without the effect, and it is
+not a different regime: it never gets there. Scoring every cell on the band
+of $\sigma/\mathrm{sd}$ that all four ladders cover:
+
+| target, ladder | $\sigma/\mathrm{sd} \leq 0.71$ | $> 0.71$ |
+| --- | ---: | ---: |
+| ring, full | 0.92x [0.70–0.97], 5/5 | 0.68x [0.36–1.12], 4/5 |
+| standardized, full | 0.99x [0.86–1.09], 3/5 | 0.78x [0.46–1.00], 4/5 |
+| ring, short ladder | 0.99x [0.86–1.16], 4/5 | 0.69x [0.47–0.88], 5/5 |
+| ring, shallow | 0.95x [0.93–1.40], 3/5 | ladder does not reach it |
+
+Inside the shared band all four agree and the shallow cell sits in the middle
+of them; above it, all three that reach drop to 0.68–0.78. The whole-ladder
+numbers differ because they average different bands. And absolute $\sigma$ is
+not the variable either: the standardized cell's ladder tops out at 2.80 in
+absolute terms against the shallow one's 2.00, and it behaves like the cells
+that reach 8.00.
+
+The mechanism this is consistent with is in the closed form and is not
+separately tested: at the top of the ladder the VP input is
+$\sqrt{\bar\alpha}x_0 + \sqrt{1-\bar\alpha}\,\varepsilon$, so *copying the
+input* predicts $\varepsilon$ with relative error
+$\bar\alpha v = v/(1+\sigma_{\max}^2) = 0.126$ — the rescaling hands the VP
+network most of its own regression target for free, where the VE network has to
+divide by $\sigma_{\max}$ first. That identity is measured against a sample
+(`test_top_of_ladder_snr_is_the_vp_identity_maps_error`); that it is *why* VP
+wins there is not.
+
+Three limits on all of it. Five paired seeds cannot produce a sign-test $p$
+below $2/2^5 = 0.0625$, so every "no effect" above means "not resolvable at
+five seeds" and the sign test reports that floor next to its $p$. The
+comparison is at a fixed 8,000-step budget on one architecture, so this is a
+statement about training speed at that budget and not about the converged
+model. And whether a 1.5x lower score error at the top of the
+ladder changes any *sample* is not measured here. The prediction, from the
+sampling section above, is that it does not: at $\sigma_{\max}=8$ even
+replacing the prior with an exact draw from $p_{\sigma_{\max}}$ costs nothing
+measurable, so the coarse end is not where this repo's sampling error is spent.
+That is a prediction and not a result.
 
 ## Conditioning: what classifier-free guidance actually samples from
 
@@ -693,7 +795,7 @@ Every figure, from a clean clone, without training or sampling anything:
 python -m venv .venv && source .venv/bin/activate
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt && pip install -e .
-./reproduce.sh                  # 281 tests, then all 11 figures: under a minute
+./reproduce.sh                  # 301 tests, then all 12 figures: under two minutes
 ```
 
 Running this repo end to end is about an hour of CPU — the sampler sweep alone
@@ -728,6 +830,7 @@ python experiments/sampling.py         # ~20 min  8 sampler arms + ladder sweep
 python experiments/ode.py              # ~25 min  NFE sweep + likelihoods
 python experiments/schedules.py        # ~15 min  3 ladders x 5 budgets x 3 seeds
 python experiments/vp_ve.py            # ~2 min   VP vs VE: 2 targets x 6 sigma_max
+python experiments/vp_coords.py --train  # ~35 min VP-coordinate training: 4 cells x 2 x 5 seeds
 python experiments/guidance.py         # ~19 min  guidance: 5 weights x 2 samplers + controls
 ```
 
@@ -787,9 +890,13 @@ python experiments/guidance.py         # ~19 min  guidance: 5 weights x 2 sample
 - **Variance-exploding only, and now measured to be enough.** The forward
   process here has no drift. Variance-preserving turned out to be a change of
   variables *exactly* -- same chain, pathwise
-  ([`diffusion/vp.py`](diffusion/vp.py)) -- so the remaining gap is not the
-  process but the network: nothing here trains a model in VP coordinates, which
-  is where the O(1)-input argument for VP would actually be tested.
+  ([`diffusion/vp.py`](diffusion/vp.py)) -- and training a network in VP
+  coordinates, which is where the O(1)-input argument lives, is worth 0.68-0.78x
+  the score error above $\sigma \approx \mathrm{sd}(x_0)$ and little or
+  nothing below it, for a reason that is not the O(1)-input argument (that premise holds only
+  on standardized data, and standardizing does not help). What is *not* tested
+  is whether that coarse-end gain moves a sample, and the sampler's own error
+  budget predicts it does not.
 
 ## References
 
