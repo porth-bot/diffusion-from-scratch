@@ -107,6 +107,7 @@ from typing import Sequence
 import torch
 
 from diffusion.langevin import NoisedScoreFn
+from diffusion.model import ScoreNet
 
 Tensor = torch.Tensor
 
@@ -118,6 +119,8 @@ __all__ = [
     "vp_score_fn",
     "ddpm_ancestral_vp",
     "prior_variance_error",
+    "input_sd",
+    "VPInputScoreNet",
 ]
 
 
@@ -313,3 +316,81 @@ def prior_variance_error(sigma_max: float, data_var: float) -> tuple[float, floa
     ve = sigma_max**2 / (data_var + sigma_max**2)
     vp = 1.0 / (abar * data_var + 1.0 - abar)
     return ve, vp
+
+
+# ---------------------------------------------------------------------------
+# The one thing the coordinate change does not carry: what the network sees.
+# ---------------------------------------------------------------------------
+#
+# Everything above is about the process and the prior, and both were settled
+# with no network involved. The README's remaining VP caveat is the third
+# thing, and it is the one the literature actually argues from: a *network
+# trained in VP coordinates* sees inputs of O(1) scale at every noise level,
+# where a VE network's inputs grow with sigma. That argument is about the
+# conditioning of a learning problem, so it cannot be settled by algebra --
+# but its premise can, and the premise turns out to be conditional.
+#
+# For data of per-coordinate variance v, the state at level sigma has
+# per-coordinate standard deviation
+#
+#     VE:  sqrt(v + sigma^2)
+#     VP:  sqrt((v + sigma^2) / (1 + sigma^2))          [= sqrt(abar) times VE]
+#
+# so over a ladder [sigma_min, sigma_max] with sigma_min ~ 0:
+#
+#     VE spans  sqrt(v)            ->  sqrt(v + sigma_max^2)
+#     VP spans  sqrt(v)            ->  sqrt((v + sigma_max^2)/(1 + sigma_max^2))
+#
+# VP is "O(1) at every level" only when v = 1, where its input standard
+# deviation is *exactly* 1 at every sigma. Off standardization it is not even
+# a narrower range: on this repo's ring (v = 8.16, sigma_max = 8) VE spans a
+# factor of 2.97 and VP spans 2.71 -- the same problem, pointed the other way.
+# So the input-scale argument, like the prior argument above, is a statement
+# about standardized data that is routinely quoted as a statement about the
+# process. experiments/vp_coords.py measures both cases.
+
+
+def input_sd(sigma: float | Sequence[float] | Tensor, data_var: float,
+             coords: str = "ve") -> Tensor:
+    """Per-coordinate sd of the state a network sees at level ``sigma``.
+
+    ``coords`` is ``"ve"`` (``sqrt(v + sigma^2)``) or ``"vp"``
+    (``sqrt(abar) `` times that). Closed form, so the prediction the experiment
+    tests is written down before it is measured -- and so the claim "VP inputs
+    are O(1)" can be checked against ``data_var`` rather than assumed.
+    """
+    if coords not in ("ve", "vp"):
+        raise ValueError(f"coords must be 've' or 'vp', got {coords!r}")
+    if data_var <= 0:
+        raise ValueError("data_var must be positive")
+    s = _as_float_tensor(sigma)
+    ve = torch.sqrt(data_var + s * s)
+    return ve if coords == "ve" else ve * torch.sqrt(alphabar_from_sigma(s))
+
+
+class VPInputScoreNet(ScoreNet):
+    """A score network that reads its input in VP coordinates.
+
+    Identical to :class:`diffusion.model.ScoreNet` in every other respect --
+    same architecture, same parameter count, same conditioning, same
+    ``eps``-prediction output -- but the state is rescaled by ``sqrt(abar)``
+    before the first linear layer.
+
+    That is the whole of "training in VP coordinates", and the reason it is so
+    small is Eq. (2): the VE and VP states differ by a per-level scalar, and the
+    regression *target* ``eps`` is the same draw in both. So the two arms of the
+    comparison share their data, their targets and their initialization, and
+    differ by one multiplication -- which is what makes the experiment a
+    controlled one rather than two training runs that also differ by everything
+    else.
+
+    Because :meth:`ScoreNet.forward` is written in terms of :meth:`epsilon`,
+    the score, ``score_fn`` and ``noised_score_fn`` all follow with no further
+    change, and they return the score in **VE coordinates** -- the network is
+    the only thing that moved, so everything downstream (samplers, diagnostics,
+    the exact-score comparison) is unchanged and directly comparable.
+    """
+
+    def epsilon(self, x: Tensor, sigma: float | Tensor) -> Tensor:
+        s = self._broadcast_sigma(x, sigma)
+        return super().epsilon(x * torch.sqrt(alphabar_from_sigma(s)).unsqueeze(1), s)
