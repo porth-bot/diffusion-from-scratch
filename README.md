@@ -875,7 +875,7 @@ Every figure, from a clean clone, without training or sampling anything:
 python -m venv .venv && source .venv/bin/activate
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt && pip install -e .
-./reproduce.sh                  # 322 tests, then all 13 figures: about a minute
+./reproduce.sh                  # 323 tests, then all 13 figures: about a minute
 ```
 
 Running this repo end to end is about an hour of CPU — the sampler sweep alone
