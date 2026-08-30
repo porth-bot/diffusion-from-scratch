@@ -711,6 +711,86 @@ $\frac{1+w}{w}\log(1+w) - 1$, which has the right leading logarithm and
 over-predicts by 22% at $w=16$ — so the ladder's weighting is not uniform, and
 what is established is the mechanism and the measurements, not the exponent.
 
+### The other half: what guidance does once the components overlap
+
+![guidance vs overlap](figures/overlap.png)
+
+The section above ends on a limitation of its own target rather than of the
+method: at 7.7 component standard deviations the tilt is a constant where
+$p(x\mid k)$ has mass, so $q_w = p(x\mid k)$ at every weight and the sharpening
+guidance is *for* cannot appear. Running the missing half needs only a wider
+component. [`experiments/overlap.py`](experiments/overlap.py) holds the ring's
+radius and count fixed and widens the Gaussians, taking nearest-neighbour
+separation from 7.65 down to 1.53 component sd. Everything stays exact: both
+scores, $q_w$ up to the same 2-D quadrature, and draws from it, with the
+distance between two independent draws as the floor.
+
+**The controlling variable is one scalar, and it is not a property of the
+sampler.** For a mixture, $p(x\mid k)/p(x) = r_k(x)/w_k$ exactly — the
+posterior responsibility — so
+
+$$\log q_w(x) - \log q_0(x) = w\big(\log r_k(x) - \log w_k\big) + \text{const},$$
+
+i.e. **the tilt is the responsibility raised to the guidance weight**
+([`log_tilt`](diffusion/guidance.py)). Guidance therefore does something
+exactly to the extent that $r_k$ *varies* over the conditional's mass; when the
+label is already determined by $x$ the tilt is constant and cancels against the
+normalizer. That is why the separated ring showed nothing, and $\mathrm{sd}(\log
+r_k)$ under $p(\cdot\mid k)$ predicts the whole sweep:
+
+| separation (component sd) | 7.65 | 3.83 | 2.55 | 1.91 | 1.53 |
+|---|---|---|---|---|---|
+| $\mathrm{sd}(\log r_k)$ under $p(\cdot\mid k)$ | 0.049 | 0.496 | 0.717 | 0.782 | 0.816 |
+| $W_2^{\mathrm{sl}}(q_4, q_0)$ / floor | 1.0 | 11.7 | 27.0 | 36.5 | 40.7 |
+
+At 7.65 sd every weight lands within 1.05× the floor: guidance is not weak
+there, it is **absent**. One implementation note that is a trap rather than a
+detail: `responsibilities().log()` cannot be used to compute this, because on
+the default ring the off-component responsibilities are below float32's
+smallest normal and the linear form returns exact zeros — on precisely the rows
+that establish the separated regime. `log_responsibilities` (a `log_softmax`)
+is accurate there and is what `log_tilt` uses.
+
+**And the sharpening, once it is available, is mostly not sharpening.** Split
+the effect into the mean's displacement from $\mu_k$ and the spread about it,
+both in component sd:
+
+| separation | $w$ | displacement | spread | purity |
+|---|---|---|---|---|
+| 7.65 | 0 | 0.000 | 1.001 | 0.9999 |
+| 7.65 | 1 | 0.000 | 1.002 | 1.0000 |
+| 7.65 | 4 | 0.001 | 1.001 | 1.0000 |
+| 2.55 | 0 | 0.000 | 0.998 | 0.8001 |
+| 2.55 | 1 | 0.194 | 0.878 | 0.9255 |
+| 2.55 | 4 | 0.458 | 0.826 | 0.9930 |
+| 1.53 | 0 | 0.000 | 0.999 | 0.5583 |
+| 1.53 | 1 | 0.364 | 0.880 | 0.7576 |
+| 1.53 | 4 | 0.899 | 0.955 | 0.9532 |
+
+The displacement grows without apparent bound and is monotone in $w$ at every
+separation, reaching **0.90 component sd**. The narrowing does not: it bottoms
+out at **0.83 sd** — a 17% reduction — and then **reverses**, so at 1.91 and
+1.53 sd the spread has an interior minimum in $w$ and the strongest guidance
+tried is *wider* than half of it. So on this target the honest description of
+what the tilt does is that it **moves the conditional away from its
+neighbours** far more than it concentrates it, and past a point more guidance
+buys only displacement. The displacement follows the same $\log(1+w)$ law the
+ancestral drift did, from a $w=1$ anchor — to within 7% in the three most
+overlapping cells and 11% at 3.83 sd, where the displacement is 0.14 sd and
+there is little to fit. That is a parallel worth naming and not a derivation:
+there the sampler drifted on a target that did not move, here the target itself
+moves.
+
+The read-out that carries the result is the one the separated study
+**discarded**. Purity was a saturated 1.0000 at every weight there and called
+useless; here it runs 0.558 → 0.953 over $w = 0 \ldots 4$ at 1.53 sd. A
+diagnostic is uninformative relative to a regime, not in itself.
+
+What this does not settle is the sampler question in the overlapping regime.
+Everything above is the *target* $q_w$, measured by exact quadrature; whether
+ancestral sampling still overshoots it when the components overlap is a
+separate run and is not made here.
+
 ## Likelihoods, checked against a closed form
 
 ![ODE likelihood](figures/ode_likelihood.png)
@@ -795,7 +875,7 @@ Every figure, from a clean clone, without training or sampling anything:
 python -m venv .venv && source .venv/bin/activate
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt && pip install -e .
-./reproduce.sh                  # 301 tests, then all 12 figures: under two minutes
+./reproduce.sh                  # 322 tests, then all 13 figures: about a minute
 ```
 
 Running this repo end to end is about an hour of CPU — the sampler sweep alone
@@ -865,14 +945,21 @@ python experiments/guidance.py         # ~19 min  guidance: 5 weights x 2 sample
   closed under noising, so it cannot supply ground truth at intermediate
   levels, which is what every experiment here needs. The experiments all run
   on the ring mixture for that reason.
+- **Guidance's overlapping regime is measured; its sampler in that regime is
+  not.** Widening the components until the responsibility varies makes the tilt
+  bite ([`experiments/overlap.py`](experiments/overlap.py)), and what it does
+  is displace the conditional — up to 0.90 component sd, monotone in $w$ — far
+  more than it narrows it (17% at best, then reversing). Every number there is
+  the target $q_w$ by exact quadrature, so whether ancestral sampling still
+  overshoots once the components overlap is untested.
 - **Guidance is measured, and the target it is measured against barely moves.**
   Classifier-free guidance on the component label is now built (exactly, from
   the analytic scores) and scored against the density it is said to target. The
   finding that limits the section is its own: at 7.7 standard deviations of
   separation the tilt is a constant where the conditional has mass, so
   $q_w \approx p(x\mid y{=}k)$ at every weight and this target cannot exhibit
-  the sharpening guidance is for. Showing that half would need overlapping
-  components — a small radius or a wide $s$ — and that sweep is not run here.
+  the sharpening guidance is for. Showing that half needs overlapping
+  components, which is the sweep the bullet above reports.
   What this target *can* show, and does, is the sampler-dependence: the
   destination is fixed and the one-pass sampler still drifts 10× the floor.
 - **Fast samplers stop at RK4.** The ODE side compares Euler and RK4 at

@@ -29,6 +29,7 @@
 #     python experiments/vp_ve.py            # ~2 min  (VP vs VE prior sweep)
 #     python experiments/vp_coords.py --train  # ~35 min (40 paired training runs)
 #     python experiments/guidance.py         # ~19 min (classifier-free guidance sweep)
+#     python experiments/overlap.py          # ~3 min  (guidance vs component overlap)
 #
 # Determinism: the replay is pure post-processing of committed files, so it is
 # exact -- rerunning it leaves the working tree clean. Recomputation is seeded
@@ -82,6 +83,7 @@ step "EMA-of-weights ablation" experiments/ema.py --figures
 step "VP vs VE: one chain, two coordinate systems" experiments/vp_ve.py --figures
 step "classifier-free guidance: what it samples from" experiments/guidance.py --figures
 step "training in VP coordinates" experiments/vp_coords.py --figures
+step "guidance against component overlap" experiments/overlap.py --figures
 
 echo
 echo "=================================================================="
