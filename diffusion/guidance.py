@@ -204,6 +204,32 @@ def tilted_log_density(
     return out
 
 
+def log_tilt(mixture: GaussianMixture, k: int, x: Tensor, w: float) -> Tensor:
+    r"""``w (log r_k(x) - log w_k)``: the whole of what guidance does to ``p(x|k)``.
+
+    ``q_w \propto p(x|k)^{1+w} p(x)^{-w} = p(x|k) [p(x|k)/p(x)]^w``, and for a
+    mixture ``p(x|k)/p(x) = r_k(x)/w_k`` exactly, where ``r_k`` is the posterior
+    responsibility of component ``k``. So the tilt is the *responsibility raised
+    to the guidance weight*, and
+
+        log q_w(x) - log q_0(x) = w (log r_k(x) - log w_k)   (up to a constant).
+
+    That identity is the reason this repo's first guidance measurement found
+    nothing. On the default ring the components sit 7.7 component standard
+    deviations apart, so ``r_k = 1`` to float precision wherever ``p(x|k)`` has
+    any mass; the tilt is then the constant ``-w log w_k``, it cancels against
+    the normalizer, and ``q_w = p(x|k)`` at every weight. Guidance is not weak
+    there, it is *absent*, and the controlling variable is visible in one
+    scalar: the spread of ``log r_k`` under ``p(\cdot|k)``.
+
+    Computed through :meth:`~diffusion.targets.GaussianMixture.log_responsibilities`
+    rather than ``responsibilities().log()``, which underflows in exactly the
+    well-separated regime the identity is being used to explain.
+    """
+    logw = torch.log(mixture.weights.to(x.dtype))
+    return w * (mixture.log_responsibilities(x)[:, k] - logw[k])
+
+
 @dataclass
 class TiltedGrid:
     """``q_w`` normalized on a grid, with exact draws from that normalization.

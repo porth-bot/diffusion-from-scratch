@@ -313,6 +313,20 @@ class Mixture(Target):
         """``r_k(x)`` -> ``(n, K)``, rows summing to 1 (a softmax; see class doc)."""
         return torch.softmax(self.component_log_probs(x), dim=1)
 
+    def log_responsibilities(self, x: Tensor) -> Tensor:
+        """``log r_k(x)`` -> ``(n, K)``, rows log-sum-exp'ing to 0.
+
+        Not ``responsibilities().log()``. Well-separated components make every
+        off-component responsibility underflow: on the default ring, a point
+        drawn near one mode has ``r_j`` for the others below float32's smallest
+        normal, so the linear form returns exact zeros and its log is ``-inf``
+        (or, if clamped, whatever the clamp was). Those are the rows a tilt
+        diagnostic cares about most -- ``log r_k`` is what
+        :func:`diffusion.guidance.log_tilt` needs and it stays accurate to
+        1e-5 in float32 where the linear route is off by 135 nats.
+        """
+        return torch.log_softmax(self.component_log_probs(x), dim=1)
+
     def log_prob(self, x: Tensor) -> Tensor:
         return torch.logsumexp(self.component_log_probs(x), dim=1)
 
