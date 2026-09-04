@@ -2,7 +2,7 @@
 #
 # Regenerate every figure in figures/ from the committed logs and weights.
 #
-#     ./reproduce.sh              # tests, then all 12 figures: well under a minute
+#     ./reproduce.sh              # 359 tests, then all 14 figures: 2-3 min
 #     PYTHON=/path/to/python ./reproduce.sh
 #
 # NO TRAINING AND NO SAMPLING happens here, and that is the point. Running this
