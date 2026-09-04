@@ -208,8 +208,8 @@ sample size:
 
 | sampler | score | init | NFE | weight TV | mode sd | sliced $W_2$ | MMD $p$, $h=5.71$ | MMD $p$, $h=0.4$ |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| exact sampler | — | — | 0 | 0.005 | 0.401 | 0.043 | 0.26 | 0.48 |
-| ancestral | exact | $p_{\sigma_{\max}}$ | 200 | 0.005 | 0.394 | 0.076 | 0.81 | 0.99 |
+| exact sampler | — | — | 0 | 0.005 | 0.400 | 0.042 | 0.26 | 0.48 |
+| ancestral | exact | $p_{\sigma_{\max}}$ | 200 | 0.005 | 0.393 | 0.076 | 0.81 | 0.99 |
 | ancestral | exact | $N(0,\sigma_{\max}^2)$ | 200 | 0.007 | 0.394 | 0.050 | 0.73 | 0.24 |
 | ancestral | **learned** | $N(0,\sigma_{\max}^2)$ | 200 | 0.036 | 0.406 | 0.150 | 0.37 | **0.010** |
 | annealed Langevin | exact | $N(0,\sigma_{\max}^2)$ | 200 | 0.012 | 0.419 | 0.047 | 0.72 | 0.46 |
@@ -220,7 +220,10 @@ sample size:
 Sliced $W_2$ between two independent exact draws is $0.066 \pm 0.020$ (eight
 pairs, range 0.036–0.092), so that band is the floor, not zero; $p = 0.005$ is
 the resolution floor of a 199-permutation test, not a measured 0.005. Target
-mode width is 0.4 and an exact draw reads 0.401.
+mode width is 0.4, and the two independent exact draws in this table's own
+statistics read 0.400 (the row above) and 0.401 (the reference they are scored
+against) — which is the resolution of that column, and the size any mode-width
+difference has to beat.
 
 With the exact score, ancestral sampling at 200 levels is indistinguishable
 from an exact draw on every statistic here, and the prior mismatch at
@@ -228,7 +231,7 @@ $\sigma_{\max} = 8$ costs nothing measurable. Swapping in the learned score is
 what moves the numbers.
 
 The two samplers are wrong in opposite directions, which is worth noticing:
-ancestral comes back a little *narrow* (0.394 against 0.401) because it
+ancestral comes back a little *narrow* (0.394 against 0.400–0.401) because it
 discards the posterior spread over $x_0$ at every level, while annealed
 Langevin at 200 evaluations comes back *wide* (0.419) because ten steps per
 level is not enough to contract the state down from the previous, broader
@@ -266,16 +269,18 @@ what remains is not a step-size error.
 The middle panel is a check nobody ordered. `ddpm_gaussian_variance` predicts
 the variance the sampler returns on a *single* Gaussian; applied to one
 component of the mixture it predicts the *within-mode* width, and once the
-ladder is fine enough to resolve a mode it is right to under 1%:
+ladder is fine enough to resolve a mode it converges onto the measurement —
+7.5% out at NFE 20, 2.5% at 50, then under 1% from 100 on:
 
 | NFE | 20 | 50 | 100 | 200 | 1000 |
 | --- | --- | --- | --- | --- | --- |
 | predicted mode sd | 0.350 | 0.378 | 0.387 | 0.392 | 0.396 |
 | measured (exact score) | 0.378 | 0.387 | 0.390 | 0.394 | 0.396 |
 
-The gap at NFE 20 is real and expected: the coarse levels of that ladder do
+The gaps at the coarse end are real and expected: those ladders' top levels do
 not see one mode at a time, so a single-Gaussian recursion has no reason to
-apply there, and it does not.
+apply there, and it does not. It earns the word "predicts" from 100
+evaluations on.
 
 ### The median heuristic picks the wrong scale
 
@@ -407,13 +412,17 @@ averaged over three prior draws (seed-to-seed sd averages 0.008):
 | PF-ODE RK4, linear | 0.237 | 0.121 | 0.0711 | 0.0715 | 0.0715 |
 
 **The ODE forgets the schedule, on schedule.** Its three arms disagree by 0.451
-at 9 evaluations — 57× the seed-to-seed spread — then by 0.058 at 17, 0.0005 at
-41, and 0.0001 from 101 on, which is below what the statistic can resolve. Three
+at 9 evaluations — 57× the seed-to-seed spread — then by 0.058 at 17, 0.0004
+at 41, and under 0.0001 from 101 on, which the statistic cannot resolve. Three
 different ladders, the same answer to four decimals: the cancellation is not a
 rewriting trick, it is something the sampler actually does.
 
-**The ancestral sampler does not.** Its spread never closes: 0.021 at 41, 0.015
-at 101, 0.016 at 201, always with the linear ladder worst. That is the right
+**The ancestral sampler does not.** Its spread closes slowly and never far:
+0.021 at 41, 0.015 at 101, 0.012 at 201 — 2.7×, 1.9× and 1.5× the seed-to-seed
+spread, where the ODE's is already 0.05× of it at 41. Always with the linear
+ladder worst. (Those are the exact-score arm above; its learned-score
+counterpart is 0.019, 0.009 and 0.016, and mixing the two is how this
+paragraph read 0.016 at 201 until a test recomputed it.) That is the right
 outcome rather than a discrepancy — the derivation covers the flow, not the
 chain, and the chain's per-level plug-in error (§ ancestral, above) depends on
 the *gap* between adjacent levels. At 201 levels the linear ladder's finest
@@ -831,7 +840,7 @@ invites a trend the sweep does not have.
 ancestral's ordinary discretization error runs 1.85 → 3.00 → 3.11 floors as the
 components widen — the target is simply getting harder. Divide that out and the
 guidance-attributable inflation at $w = 4$ is $9.01\times$, $12.42\times$,
-$9.01\times$: essentially flat across a $5\times$ range of separation. So the
+$9.02\times$: essentially flat across a $5\times$ range of separation. So the
 answer to the open question is "yes, and by about the same relative amount",
 not "yes, and worse". That control also drifts *inward* at every separation,
 which is why the outward drift at $w > 0$ is guidance rather than the sampler,
@@ -927,7 +936,7 @@ Every figure, from a clean clone, without training or sampling anything:
 python -m venv .venv && source .venv/bin/activate
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt && pip install -e .
-./reproduce.sh                  # 331 tests, then all 14 figures: ~90 s
+./reproduce.sh                  # 359 tests, then all 14 figures: ~2 min
 ```
 
 Running this repo end to end is about an hour of CPU — the sampler sweep alone
@@ -939,9 +948,15 @@ from a sweep log, but a figure of a *cloud* or of a *field* is a picture of
 actual draws and of the network itself, and only the tensors and the weights
 reproduce those. Each experiment takes `--figures` to replay its own.
 
-`tests/test_reproduction.py` is what keeps that claim true rather than
-aspirational: every artifact the replay reads must be **tracked by git**
-(sitting in the working tree is not the same thing), and the committed weights
+Two test modules keep the write-up honest rather than aspirational.
+`tests/test_readme_numbers.py` recomputes every table above — and the prose
+numbers the sections argue from — out of `logs/`, at the precision the README
+prints, so a number that drifts from the sweep it summarizes fails the suite
+instead of ageing quietly. It found seven on the day it was written.
+
+`tests/test_reproduction.py` covers the other half: every artifact the replay
+reads must be **tracked by git** (sitting in the working tree is not the same
+thing), and the committed weights
 must still load into the `ScoreNet` the code builds today — a break that
 retraining would silently paper over, since training rewrites the file it
 would have failed on.
