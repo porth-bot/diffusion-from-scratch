@@ -786,10 +786,62 @@ The read-out that carries the result is the one the separated study
 useless; here it runs 0.558 → 0.953 over $w = 0 \ldots 4$ at 1.53 sd. A
 diagnostic is uninformative relative to a regime, not in itself.
 
-What this does not settle is the sampler question in the overlapping regime.
-Everything above is the *target* $q_w$, measured by exact quadrature; whether
-ancestral sampling still overshoots it when the components overlap is a
-separate run and is not made here.
+### And the samplers there: ancestral still overshoots, Langevin still does not
+
+![the samplers in the overlapping regime](figures/overlap_samplers.png)
+
+Everything above is the *target*, by exact quadrature. The sampler question was
+left open in as many words, and
+[`experiments/overlap_samplers.py`](experiments/overlap_samplers.py) closes it:
+the guidance section's three arms, on this section's three widths.
+
+It was open in both directions. Ancestral's drift has a mechanism — a one-pass
+sampler chasing an attractor that sits outside $\mu_k$
+([`guided_stationary_point`](diffusion/guidance.py)) — but at overlap $q_w$ has
+itself moved outward by up to 1.80, so a sampler drifting outward might have
+been drifting toward a target that came to meet it.
+
+They add. The column below is the sampler's radial landing point *minus*
+$q_w$'s, in component sd, so zero is "arrived":
+
+| separation | $w$ | ancestral, past $q_w$ | Langevin, past $q_w$ | ancestral / floor | Langevin / floor |
+|---|---|---|---|---|---|
+| 7.65 | 0 | −0.042 | −0.012 | 1.85 | 1.06 |
+| 7.65 | 4 | **+0.441** | −0.012 | 16.7 | 1.06 |
+| 2.55 | 0 | −0.079 | +0.002 | 3.00 | 0.91 |
+| 2.55 | 4 | **+0.772** | +0.005 | 37.2 | 0.95 |
+| 1.53 | 0 | −0.096 | +0.009 | 3.11 | 0.99 |
+| 1.53 | 4 | **+0.659** | +0.009 | 28.0 | 0.80 |
+
+**Annealed Langevin reaches $q_w$ in every cell** — at or below the floor, and
+within 0.02 component sd of the target's radial position. The reading the
+separated study gave it (it equilibrates at each level, so its output is the
+last level's stationary law) was established where the tilt did nothing; it
+survives the regime where the tilt does something.
+
+**Ancestral overshoots at every separation, and the target's own displacement
+does not absorb it.** Two things the raw numbers would say wrongly, both
+computed in the script rather than read off:
+
+*The overshoot is not monotone in overlap.* 0.441 → 0.772 → 0.659: the most
+overlapping cell overshoots **less** than the middle one. The distance column
+invites a trend the sweep does not have.
+
+*The $w = 0$ row is not a fixed baseline.* With no guidance and no tilt at all,
+ancestral's ordinary discretization error runs 1.85 → 3.00 → 3.11 floors as the
+components widen — the target is simply getting harder. Divide that out and the
+guidance-attributable inflation at $w = 4$ is $9.01\times$, $12.42\times$,
+$9.01\times$: essentially flat across a $5\times$ range of separation. So the
+answer to the open question is "yes, and by about the same relative amount",
+not "yes, and worse". That control also drifts *inward* at every separation,
+which is why the outward drift at $w > 0$ is guidance rather than the sampler,
+and why the raw radial offset understates it.
+
+One knob had to move and is the one thing that could confound a comparison
+across cells: $\sigma_{\max}$ is scaled with the component width, since the
+prior initialization has to dominate the data and the widest cell's data sd is
+not the default's. The separated cell reproduces the guidance study's ladder
+exactly, and the tests assert it.
 
 ## Likelihoods, checked against a closed form
 
@@ -875,7 +927,7 @@ Every figure, from a clean clone, without training or sampling anything:
 python -m venv .venv && source .venv/bin/activate
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt && pip install -e .
-./reproduce.sh                  # 323 tests, then all 13 figures: about a minute
+./reproduce.sh                  # 331 tests, then all 14 figures: ~90 s
 ```
 
 Running this repo end to end is about an hour of CPU — the sampler sweep alone
@@ -912,6 +964,8 @@ python experiments/schedules.py        # ~15 min  3 ladders x 5 budgets x 3 seed
 python experiments/vp_ve.py            # ~2 min   VP vs VE: 2 targets x 6 sigma_max
 python experiments/vp_coords.py --train  # ~35 min VP-coordinate training: 4 cells x 2 x 5 seeds
 python experiments/guidance.py         # ~19 min  guidance: 5 weights x 2 samplers + controls
+python experiments/overlap.py          # ~3 min   guidance vs component overlap (the target)
+python experiments/overlap_samplers.py # ~20 min  the same overlap, with the samplers in it
 ```
 
 ## Limitations / next
@@ -945,13 +999,18 @@ python experiments/guidance.py         # ~19 min  guidance: 5 weights x 2 sample
   closed under noising, so it cannot supply ground truth at intermediate
   levels, which is what every experiment here needs. The experiments all run
   on the ring mixture for that reason.
-- **Guidance's overlapping regime is measured; its sampler in that regime is
-  not.** Widening the components until the responsibility varies makes the tilt
-  bite ([`experiments/overlap.py`](experiments/overlap.py)), and what it does
-  is displace the conditional — up to 0.90 component sd, monotone in $w$ — far
-  more than it narrows it (17% at best, then reversing). Every number there is
-  the target $q_w$ by exact quadrature, so whether ancestral sampling still
-  overshoots once the components overlap is untested.
+- **Guidance's overlapping regime is measured, samplers included — and what is
+  left is the weight range.** Widening the components until the responsibility
+  varies makes the tilt bite ([`experiments/overlap.py`](experiments/overlap.py)),
+  and what it does is displace the conditional — up to 0.90 component sd,
+  monotone in $w$ — far more than it narrows it (17% at best, then reversing).
+  The sampler half is now run too
+  ([`experiments/overlap_samplers.py`](experiments/overlap_samplers.py)):
+  ancestral still overshoots $q_w$ there, by 0.44–0.77 component sd at $w = 4$,
+  and Langevin still arrives. What is *not* covered is $w > 4$ in the
+  overlapping regime, where the spread reversal above says the tilt is already
+  doing something other than sharpening, and where the ancestral overshoot's
+  $\log(1+w)$ law was fitted on the separated target rather than this one.
 - **Guidance is measured, and the target it is measured against barely moves.**
   Classifier-free guidance on the component label is now built (exactly, from
   the analytic scores) and scored against the density it is said to target. The
