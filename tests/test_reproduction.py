@@ -82,6 +82,10 @@ REPLAY_ARTIFACTS = {
         "logs/overlap.csv",
         "logs/overlap.json",
     ],
+    "overlap_samplers.py": [
+        "logs/overlap_samplers.csv",
+        "logs/overlap_samplers.json",
+    ],
 }
 
 FIGURES = [
@@ -98,6 +102,7 @@ FIGURES = [
     "figures/guidance.png",
     "figures/vp_coords.png",
     "figures/overlap.png",
+    "figures/overlap_samplers.png",
 ]
 
 

@@ -1,0 +1,12 @@
+{
+  "n_samples": 16000,
+  "ddpm_levels": 200,
+  "langevin_levels": 40,
+  "langevin_steps": 200,
+  "langevin_tau": 0.002,
+  "sigma_min": 0.05,
+  "n_components": 8,
+  "radius": 4.0,
+  "seed": 0,
+  "elapsed_s": 1198.348074913025
+}
