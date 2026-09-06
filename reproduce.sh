@@ -2,7 +2,7 @@
 #
 # Regenerate every figure in figures/ from the committed logs and weights.
 #
-#     ./reproduce.sh              # 359 tests, then all 14 figures: 2-3 min
+#     ./reproduce.sh              # 361 tests, then all 14 figures: 2-3 min
 #     PYTHON=/path/to/python ./reproduce.sh
 #
 # NO TRAINING AND NO SAMPLING happens here, and that is the point. Running this
@@ -92,3 +92,30 @@ echo "=================================================================="
 echo "done in $((SECONDS - started))s. figures/:"
 ls -1 figures/
 echo "=================================================================="
+
+# Check the "leaves the working tree clean" claim rather than repeating it. The
+# replay above is pure post-processing of committed sweeps, tensors and weights
+# -- no training, no sampling -- so unlike the NumPy repos in this series there
+# is no machine-dependent column to excuse: a figure that now differs from its
+# committed copy means the plotting code and the shipped PNG have diverged.
+# That is how gp-from-scratch found two of its figures sitting stale, and
+# reading `git status` by hand afterwards is not a check.
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # Worktree-vs-index differences only: the porcelain format is XY<space>path,
+    # X the index status and Y the worktree's, so a figure that is merely newly
+    # staged reads "A  path" and is not drift. Untracked ("??") ones are: a PNG
+    # the replay writes but nobody committed is the same problem seen from the
+    # other side.
+    changed=$(git status --porcelain -- figures/ \
+        | awk '{ y = substr($0, 2, 1); if (y == "M" || substr($0,1,2) == "??") print $2 }')
+    echo
+    if [ -z "${changed}" ]; then
+        echo "reproduction: all 14 committed figures came back byte-for-byte."
+    else
+        echo "reproduction: DRIFT -- these differ from the committed copies:"
+        for f in ${changed}; do echo "    ${f}"; done
+        echo "Nothing here plots wall-clock, so this is not machine variation."
+        echo "Inspect the difference, then commit the regenerated files."
+    fi
+    echo "=================================================================="
+fi

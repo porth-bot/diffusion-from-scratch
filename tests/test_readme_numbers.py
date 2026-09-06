@@ -48,7 +48,10 @@ import json
 import math
 import re
 import statistics
+import subprocess
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 LOGS = ROOT / "logs"
@@ -844,3 +847,54 @@ def test_the_vp_coords_conclusions_follow_from_those_tables():
     assert "2/2^5 = 0.0625" in text.replace("$", "").replace("{", "").replace("}", "")
     snr = measured["native/full"]["top_of_ladder_snr"]
     check(snr, "0.126", "the top-of-ladder identity's error")
+
+
+# --- the counts the documents quote about the repo itself -----------------
+#
+# Every test above recomputes a measurement from a committed sweep. These two
+# do not: they check what the README and reproduce.sh say about *this
+# repository* -- how many tests there are, how many figures ship -- which is
+# the one class of claim no instrument in this series was looking at.
+# gp-from-scratch's Reproduce block had drifted to 340 tests against a real
+# 366, unnoticed until someone ran the suite from a fresh clone and read the
+# total off the bottom.
+
+REPRODUCE = (ROOT / "reproduce.sh").read_text()
+
+
+def _whole_suite(config) -> bool:
+    """True when this run collected everything, so a total means something.
+
+    ``pytest tests/test_ode.py`` or ``-k foo`` collects a subset; asserting a
+    total against that would fail for a reason unrelated to the README. With no
+    path argument pytest records the rootdir as its one arg.
+    """
+    if config.option.keyword or config.option.markexpr:
+        return False
+    return [Path(a).resolve() for a in config.args] == [ROOT]
+
+
+def test_the_documents_quote_the_number_of_tests_there_are(request):
+    claimed = {int(n) for n in re.findall(r"reproduce\.sh\s+# (\d+) tests", README + REPRODUCE)}
+    assert claimed, "neither document quotes a test count any more"
+    if not _whole_suite(request.config):
+        pytest.skip("a partial run's count says nothing about the README's")
+    collected = request.session.testscollected
+    assert claimed == {collected}, (
+        f"the documents claim {sorted(claimed)} tests, this run collected {collected}"
+    )
+
+
+def test_the_documents_agree_on_how_many_figures_ship():
+    tracked = subprocess.run(
+        ["git", "ls-files", "figures/*.png"],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    ).stdout.split()
+    claimed = {
+        int(n)
+        for n in re.findall(r"all (\d+) (?:committed )?figures", README + REPRODUCE)
+    }
+    assert claimed, "neither document states a figure count any more"
+    assert claimed == {len(tracked)}, (
+        f"the documents claim {sorted(claimed)} figures, git tracks {len(tracked)}"
+    )
