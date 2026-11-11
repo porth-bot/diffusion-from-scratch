@@ -625,7 +625,7 @@ def test_the_overshoot_law_is_reported_as_fitted():
     logged = {float(r["w"]): r for r in rows("guidance_overshoot.csv")}
     for j, w in enumerate(float(c) for c in body.header[1:]):
         check(float(logged[w]["radial_offset"]), body[0][j + 1], f"offset at w={w}")
-        if body[1][j + 1] != "—":
+        if body[1][j + 1] != "-":
             check(float(logged[w]["log_law"]), body[1][j + 1], f"law at w={w}")
             check(float(logged[w]["ratio"]), body[2][j + 1], f"ratio at w={w}")
     within = max(abs(float(r["ratio"]) - 1) for w, r in logged.items() if w <= 8)

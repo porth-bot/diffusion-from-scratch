@@ -8,12 +8,12 @@ Score-based generative modeling built from the score outward, in PyTorch, on
 ![score fields](figures/score_fields.png)
 
 *The object a diffusion model estimates, and the estimate, side by side. Rows
-are noise levels — $\sigma = 4$, $1$, $0.2$ — of an 8-mode ring mixture. Left
+are noise levels ($\sigma = 4$, $1$, $0.2$) of an 8-mode ring mixture. Left
 is the **exact** score of the noised density $p_\sigma$, which is available
 here because a Gaussian mixture stays a Gaussian mixture when noised; middle
 is what an 87k-parameter network learned by denoising score matching; right is
 the error, normalized by that level's mean $\\|s\\|$. The learned field is not
-a picture that looks about right — it is wrong by a measurable amount, and the
+a picture that looks about right: it is wrong by a measurable amount, and the
 amount is worst at the **fine** level, exactly where the training loss looks
 best. Everything below is that observation, taken seriously.*
 
@@ -21,11 +21,11 @@ A diffusion model is an estimate of one object:
 
 $$s(x) = \nabla_x \log p(x).$$
 
-Everything else — Langevin sampling, denoising score matching, the reverse-time
-SDE, the probability-flow ODE — is written in terms of it. So the design
+Everything else (Langevin sampling, denoising score matching, the reverse-time
+SDE, the probability-flow ODE) is written in terms of it. So the design
 decision this repo makes first is: *use targets where the truth is available*.
 A 2D Gaussian mixture has an analytic score, exact moments, and an exact
-sampler, and — the property everything here rests on — it **stays a Gaussian
+sampler, and (the property everything here rests on) it **stays a Gaussian
 mixture when noised**, so the score of the noised marginal is closed-form at
 every noise level. A learned score can therefore be reported as an *error
 against truth* rather than as a picture that looks about right, and a sampler
@@ -42,9 +42,9 @@ That is why the toys are the point and not a shortcut.
 | [`diffusion/model.py`](diffusion/model.py) | The score network: an MLP conditioned on $\log\sigma$ through a written-out sinusoidal embedding, with the score formed as $-\epsilon_\theta/\sigma$ so the learned object is unit-scale at every noise level |
 | [`diffusion/dsm.py`](diffusion/dsm.py) | Denoising score matching (Vincent 2011) with its equivalence proof, the $\sigma^2$ weighting that collapses it to $\\|\epsilon_\theta - \epsilon\\|^2$, per-level diagnostics against the exact score, and the loss's irreducible floor |
 | [`diffusion/vp.py`](diffusion/vp.py) | The variance-preserving process as the SNR-matched rescaling of this repo's variance-exploding one, its score and Tweedie by the Jacobian, DDPM's ancestral update derived in $\bar\alpha$ and $\beta$ (which collapses onto the VE sampler exactly), the prior-variance accounting that is the only place the two conventions differ, and the input-scale closed form plus the one-multiplication network that put the O(1)-input argument under measurement |
-| [`diffusion/samplers.py`](diffusion/samplers.py) | Ancestral (DDPM) sampling down the ladder, derived for this repo's variance-exploding chain, with the closed-form variance it returns on a Gaussian target — including the deficit a coarse ladder is *supposed* to have |
+| [`diffusion/samplers.py`](diffusion/samplers.py) | Ancestral (DDPM) sampling down the ladder, derived for this repo's variance-exploding chain, with the closed-form variance it returns on a Gaussian target, including the deficit a coarse ladder is *supposed* to have |
 | [`diffusion/metrics.py`](diffusion/metrics.py) | Two-sample metrics written out: RBF-kernel MMD with a permutation test, sliced Wasserstein, and the exact value each takes on Gaussians |
-| [`diffusion/ode.py`](diffusion/ode.py) | The probability-flow ODE with $\sigma$ as the clock, a written-out RK4 (measured fourth-order), and likelihoods by instantaneous change of variables with a Hutchinson trace estimator — plus the exact flow on a Gaussian, which is what the solver is tested against |
+| [`diffusion/ode.py`](diffusion/ode.py) | The probability-flow ODE with $\sigma$ as the clock, a written-out RK4 (measured fourth-order), and likelihoods by instantaneous change of variables with a Hutchinson trace estimator, plus the exact flow on a Gaussian, which is what the solver is tested against |
 
 [`theory/derivations.md`](theory/derivations.md) carries the maths behind all
 of it, section-numbered to match the modules: the mixture's score and its
@@ -79,7 +79,7 @@ $1/\sigma$ precisely where the loss looks best.
 
 *The table above, at every level of the ladder rather than five of them. Left:
 relative MSE against the exact noised score, climbing an order of magnitude as
-$\sigma$ falls — the error is a property of where on the ladder you look, not a
+$\sigma$ falls; the error is a property of where on the ladder you look, not a
 single number. Right: the two cosines. They agree at the coarse end and split
 below $\sigma \approx 1$, and the plain mean's dip near $\sigma = 2$ is the
 measurement trap two sections down, not a defect of the model.*
@@ -90,12 +90,12 @@ The DSM loss does not go to zero. Its floor is
 $\mathbb{E}\\|\epsilon - \mathbb{E}[\epsilon \mid x]\\|^2$, which runs from
 $d = 2$ as $\sigma \to 0$ (the noisy point reveals $x_0$ and says nothing
 about the noise) to $0$ at large $\sigma$ (the point is almost pure noise, so
-the noise is nearly determined) — the opposite of the intuition that fine
+the noise is nearly determined), the opposite of the intuition that fine
 levels are the easy ones. Averaged over the training measure it is
 $1.203$ here, computed exactly.
 
 So a well-trained network reports $1.212$ and a barely-trained one $1.228$,
-and one minibatch's loss has a standard deviation of $0.073$ — eight times
+and one minibatch's loss has a standard deviation of $0.073$, eight times
 the entire remaining excess. Subtract the floor and the same curve is
 informative: excess risk falls from $0.025$ at step 2k to $0.0093$ at 60k
 while the true relative score error falls 4.5×. This is the concrete payoff
@@ -107,7 +107,7 @@ truth rather than a loss curve.
 *The same run, read three ways. Left: the DSM loss, flat against its exact
 optimum (dashed) from ~2k steps on, with one minibatch's noise swamping the
 remaining excess. Middle: subtract the optimum and the excess risk is still
-falling at 60k steps — under the dotted line marking the sd of a single
+falling at 60k steps, under the dotted line marking the sd of a single
 minibatch loss, i.e. entirely inside what the left panel could never have
 resolved. Right: the quantity that actually matters, error against the exact
 score, falling over the same stretch the loss called finished.*
@@ -129,8 +129,8 @@ score.
 | 0.9995 | $0.0906 \pm 0.0387$ | $0.0155 \pm 0.0019$ | 0.17 | 5/5 |
 | 0.9999 | $0.0906 \pm 0.0387$ | $0.0156 \pm 0.0020$ | 0.17 | 5/5 |
 
-A 6.3× lower score error at $d = 0.999$, and — the part a single-seed
-comparison cannot see — a **17× smaller seed-to-seed spread**. The raw arm's
+A 6.3× lower score error at $d = 0.999$, and (the part a single-seed
+comparison cannot see) a **17× smaller seed-to-seed spread**. The raw arm's
 sd is 43% of its own mean; the EMA arm's is 16% of a mean six times smaller.
 The worst raw seed (0.150) is worse than the best (0.061) by more than the
 entire raw-to-EMA gap, so on this problem *which seed you drew* matters more
@@ -140,7 +140,7 @@ than 15k of the 20k training steps, and averaging removes both.
 
 *Left: median over five seeds, raw weights in black with the seed range
 shaded. The raw curve stops improving around step 5k and then wanders inside
-a band it never leaves — the jitter EMA is there to remove. Right: final
+a band it never leaves: the jitter EMA is there to remove. Right: final
 error, error bars the seed sd.*
 
 **What did not happen, and it is the thing this was written to find.** The
@@ -154,7 +154,7 @@ mostly initialization, is genuinely worse.
 **The caveat that limits how far the top of that table generalizes.** The
 warmup correction $d_t = \min(d,\ (1+t)/(10+t))$ reaches $d$ only at
 $t = (10d-1)/(1-d)$: step 8,990 for $0.999$, step 17,990 for $0.9995$, and
-*never* inside 20k steps for $0.9999$ — which at step 20,000 is still being
+*never* inside 20k steps for $0.9999$, which at step 20,000 is still being
 run at $0.99955$. So the three largest arms were executing nearly the same
 schedule, and their agreement is a fact about the warmup ramp, not evidence
 that the decay stops mattering above $0.999$. Separating them needs a longer
@@ -162,7 +162,7 @@ run than this one.
 
 The variance argument in [`diffusion/ema.py`](diffusion/ema.py) predicts a
 variance reduction of $(1-d)/(1+d) = 5\times10^{-4}$ at $d=0.999$ under
-i.i.d. jitter. The measured reduction is $3.4\times10^{-3}$ — seven times
+i.i.d. jitter. The measured reduction is $3.4\times10^{-3}$, seven times
 short of the bound, which is what positively-correlated Adam iterates should
 do to it. The bound is a bound.
 
@@ -181,14 +181,14 @@ Noising bounds curvature, so it bounds the step size. The score of a
 $\sigma$-noised density is a posterior mean, $s_\sigma(x) = (\mathbb{E}[x_0
 \mid x] - x)/\sigma^2$, whose Jacobian is $(\mathrm{Cov}[x_0 \mid x]/\sigma^2 -
 I)/\sigma^2 \succeq -I/\sigma^2$ for **any** base density. Linearizing the ULA
-update, contraction needs $\tau|\lambda| < 4$, so $\tau_i < 4\sigma_i^2$ — one
+update, contraction needs $\tau|\lambda| < 4$, so $\tau_i < 4\sigma_i^2$: one
 condition, $\tau < 4\sigma_L^2$, covering every level of the ladder.
 
 `annealed_langevin` refuses a $\tau$ above it, because this repo's own first
 draft was above it and nearly got away with it. An unstable ladder does not
 blow up visibly: the coarse levels drive the state to $10^{80}$ and the
 strongly contractive fine levels squash it back, returning samples with the
-right support and the *wrong mode weights* — invisible on a symmetric target.
+right support and the *wrong mode weights*, invisible on a symmetric target.
 A 25/75 mixture read 0.53 instead of 0.75, which is why an asymmetric mixture
 is now a permanent test. The bound is necessary, not sufficient: at half the
 bound the same test still reads 0.70.
@@ -203,12 +203,12 @@ $p_{\sigma_{\max}}$ instead of from $N(0,\sigma_{\max}^2 I)$), **discretization*
 (refine the ladder), and **score estimation** (pass the analytic noised score
 through the identical sampler). [`experiments/sampling.py`](experiments/sampling.py)
 runs all three, 16,000 samples per arm, measured against an independent exact
-draw — which is itself a row, because neither metric reads zero at finite
+draw, which is itself a row, because neither metric reads zero at finite
 sample size:
 
 | sampler | score | init | NFE | weight TV | mode sd | sliced $W_2$ | MMD $p$, $h=5.71$ | MMD $p$, $h=0.4$ |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| exact sampler | — | — | 0 | 0.005 | 0.400 | 0.042 | 0.26 | 0.48 |
+| exact sampler | - | - | 0 | 0.005 | 0.400 | 0.042 | 0.26 | 0.48 |
 | ancestral | exact | $p_{\sigma_{\max}}$ | 200 | 0.005 | 0.393 | 0.076 | 0.81 | 0.99 |
 | ancestral | exact | $N(0,\sigma_{\max}^2)$ | 200 | 0.007 | 0.394 | 0.050 | 0.73 | 0.24 |
 | ancestral | **learned** | $N(0,\sigma_{\max}^2)$ | 200 | 0.036 | 0.406 | 0.150 | 0.37 | **0.010** |
@@ -222,7 +222,7 @@ pairs, range 0.036–0.092), so that band is the floor, not zero; $p = 0.005$ is
 the resolution floor of a 199-permutation test, not a measured 0.005. Target
 mode width is 0.4, and the two independent exact draws in this table's own
 statistics read 0.400 (the row above) and 0.401 (the reference they are scored
-against) — which is the resolution of that column, and the size any mode-width
+against), which is the resolution of that column, and the size any mode-width
 difference has to beat.
 
 With the exact score, ancestral sampling at 200 levels is indistinguishable
@@ -235,7 +235,7 @@ ancestral comes back a little *narrow* (0.394 against 0.400–0.401) because it
 discards the posterior spread over $x_0$ at every level, while annealed
 Langevin at 200 evaluations comes back *wide* (0.419) because ten steps per
 level is not enough to contract the state down from the previous, broader
-level. Giving it ten times the budget fixes that particular defect — 0.405 —
+level. Giving it ten times the budget fixes that particular defect (0.405)
 and, with the learned score, breaks something larger.
 
 ### More compute makes the Langevin sampler *worse*
@@ -243,7 +243,7 @@ and, with the learned score, breaks something larger.
 The last three rows are the day's real finding, and it took the exact-score
 control to make it a finding rather than a guess. Annealed Langevin with the
 learned score goes from sliced $W_2$ 0.274 at 200 evaluations to **0.807 at
-2000** — ten times the budget, three times the error, mode weights off by
+2000**: ten times the budget, three times the error, mode weights off by
 0.150 in TV. The same sampler with the *exact* score does not degrade
 (0.047 → 0.064, both at the floor), so this is not the ladder, the step size,
 or the stability bound. It is the score.
@@ -251,7 +251,7 @@ or the stability bound. It is the score.
 The reason is what an equilibrium sampler is for. Langevin converges to the
 stationary distribution of the score it is handed, so a biased score has a
 biased stationary law and more steps converge to it *harder*. Ancestral
-sampling never equilibrates — it visits each level exactly once — so the same
+sampling never equilibrates (it visits each level exactly once), so the same
 score error stays a perturbation instead of becoming a limit. That inverts the
 usual reading of a compute knob: here the sampler that cannot be run longer is
 the one protected from being run longer.
@@ -263,13 +263,13 @@ the one protected from being run longer.
 Refining the ancestral ladder drives the exact-score arm into the reference
 floor by about 20 evaluations and it stays there. The learned-score arm falls
 alongside it and then stops, at sliced $W_2 \approx 0.14$ and mode-weight TV
-$\approx 0.03$, a plateau no amount of further refinement touches — because
+$\approx 0.03$, a plateau no amount of further refinement touches, because
 what remains is not a step-size error.
 
 The middle panel is a check nobody ordered. `ddpm_gaussian_variance` predicts
 the variance the sampler returns on a *single* Gaussian; applied to one
 component of the mixture it predicts the *within-mode* width, and once the
-ladder is fine enough to resolve a mode it converges onto the measurement —
+ladder is fine enough to resolve a mode it converges onto the measurement,
 7.5% out at NFE 20, 2.5% at 50, then under 1% from 100 on:
 
 | NFE | 20 | 50 | 100 | 200 | 1000 |
@@ -289,7 +289,7 @@ median-heuristic bandwidth and $p = 0.010$ at $h = 0.4$. Both are the same
 test on the same samples.
 
 The median pairwise distance on this target is 5.71, which is the *diameter of
-the ring* — a kernel that wide compares gross shape and steps straight over
+the ring*: a kernel that wide compares gross shape and steps straight over
 whether the individual modes have the right width. Set $h$ to the component
 standard deviation, 0.4, and the test resolves the structure that actually
 differs. The median heuristic is a sensible default and it is not an oracle;
@@ -303,7 +303,7 @@ flags the same row without being told where to look.
 
 The forward process has no drift, so its density obeys the heat equation
 $\partial_t p = \tfrac12 g^2 \Delta p$. Write $\Delta p = \nabla\cdot(p \nabla \log p)$
-and that *is* a continuity equation — which says $p$ is transported by a
+and that *is* a continuity equation, which says $p$ is transported by a
 velocity field. Taking $\sigma$ as the clock instead of $t$, the schedule
 cancels out of it entirely:
 
@@ -311,7 +311,7 @@ $$\frac{dx}{d\sigma} = -\sigma\, s(x, \sigma).$$
 
 So sampling becomes an initial value problem, and two things fall out of the
 same equation. One Euler step of it is **half** the ancestral sampler's mean
-update — the missing half plus the injected noise are a Langevin step, which
+update: the missing half plus the injected noise are a Langevin step, which
 leaves $p_\sigma$ invariant, so the stochastic sampler is this ODE plus a term
 that does nothing in exact arithmetic. And on a Gaussian target the ODE
 separates: every point moves along its own ray by
@@ -342,7 +342,7 @@ distinguishable from an exact draw, or from each other**. What can still be said
 is who gets there first: at 17 evaluations RK4 reads 0.059, at the floor's
 centre, while the ancestral sampler is at its top edge (0.090) and Euler is
 outside it (0.113). And at 9 evaluations, where RK4 has 2 steps to work with, it
-is by far the worst of the three (0.687) — fourth-order accuracy buys nothing
+is by far the worst of the three (0.687): fourth-order accuracy buys nothing
 until there are steps to be accurate over.
 
 The learned-score rows are outside the band, and they separate: the ODE sits
@@ -350,7 +350,7 @@ below the ancestral sampler at every matched budget from 17 up, with steadier
 mode weights (TV 0.019 against 0.031). Each individual gap is about twice the
 floor's own spread; what makes the ordering credible is that five budgets and
 two statistics all point the same way. The honest summary is that *which
-dynamics is better here is a property of the score, not of the samplers* — with
+dynamics is better here is a property of the score, not of the samplers*: with
 the truth in hand the noise costs nothing, and with a biased score the extra
 randomness does not help.
 
@@ -364,7 +364,7 @@ because an under-resolved flow has not finished contracting.
 
 One number in that sweep does not move at all: the ODE's mode-weight TV with
 the exact score is **0.0121 at every budget from 9 to 401**, to four decimals.
-That is not a coincidence, it is what determinism means — the map from prior
+That is not a coincidence, it is what determinism means: the map from prior
 draw to sample is a fixed diffeomorphism, so which mode each prior point lands
 in is decided by the prior sample, and refining the solver cannot re-roll it.
 The stochastic sampler's TV wanders between 0.004 and 0.012 across the same
@@ -381,7 +381,7 @@ draw from $p_{\sigma_{\max}}$ instead of $N(0, \sigma_{\max}^2 I)$:
 
 Prior mismatch, and nothing else, was most of what remained.
 
-### The noise schedule cancels — for one of the two samplers
+### The noise schedule cancels, for one of the two samplers
 
 ![schedules](figures/schedules.png)
 
@@ -392,9 +392,9 @@ where they put nodes. That is a statement about the continuous limit, so
 a finite budget. Three ladders, each uniform spacing in a different warp of
 $\sigma$:
 
-- **geometric** — uniform in $\log\sigma$, the repo's default.
-- **linear** — uniform in $\sigma$, the naive choice.
-- **cosine** — uniform in $\arctan\sigma$. That *is* Nichol & Dhariwal's
+- **geometric**: uniform in $\log\sigma$, the repo's default.
+- **linear**: uniform in $\sigma$, the naive choice.
+- **cosine**: uniform in $\arctan\sigma$. That *is* Nichol & Dhariwal's
   schedule: their $\bar\alpha = \cos^2(\pi u/2)$ is variance-preserving, and a
   VP state is $\sqrt{\bar\alpha}\,(x_0 + \sigma\varepsilon)$ with
   $\sigma^2 = (1-\bar\alpha)/\bar\alpha$, so $\sigma(u) = \tan(\pi u / 2)$.
@@ -412,18 +412,18 @@ averaged over three prior draws (seed-to-seed sd averages 0.008):
 | PF-ODE RK4, linear | 0.237 | 0.121 | 0.0711 | 0.0715 | 0.0715 |
 
 **The ODE forgets the schedule, on schedule.** Its three arms disagree by 0.451
-at 9 evaluations — 57× the seed-to-seed spread — then by 0.058 at 17, 0.0004
+at 9 evaluations (57× the seed-to-seed spread), then by 0.058 at 17, 0.0004
 at 41, and under 0.0001 from 101 on, which the statistic cannot resolve. Three
 different ladders, the same answer to four decimals: the cancellation is not a
 rewriting trick, it is something the sampler actually does.
 
 **The ancestral sampler does not.** Its spread closes slowly and never far:
-0.021 at 41, 0.015 at 101, 0.012 at 201 — 2.7×, 1.9× and 1.5× the seed-to-seed
+0.021 at 41, 0.015 at 101, 0.012 at 201; 2.7×, 1.9× and 1.5× the seed-to-seed
 spread, where the ODE's is already 0.05× of it at 41. Always with the linear
 ladder worst. (Those are the exact-score arm above; its learned-score
 counterpart is 0.019, 0.009 and 0.016, and mixing the two is how this
 paragraph read 0.016 at 201 until a test recomputed it.) That is the right
-outcome rather than a discrepancy — the derivation covers the flow, not the
+outcome rather than a discrepancy: the derivation covers the flow, not the
 chain, and the chain's per-level plug-in error (§ ancestral, above) depends on
 the *gap* between adjacent levels. At 201 levels the linear ladder's finest
 ratio is still 1.79 where the geometric one is 1.03.
@@ -438,7 +438,7 @@ schedule recommendation that is wrong for the other one.
 
 The practical conclusion is the least dramatic reading. At any budget past 41,
 swapping the schedule moves the learned-score ODE by less than 0.0015 while the
-score being learned rather than exact costs 0.037 — more than twenty-five
+score being learned rather than exact costs 0.037, more than twenty-five
 times as much.
 On this target the schedule is a knob worth setting sensibly once and then
 leaving alone.
@@ -453,7 +453,7 @@ that rescaling goes. All the way, it turns out.
 [`diffusion/vp.py`](diffusion/vp.py) matches the two processes at the
 signal-to-noise ratio, $\sigma^2 = (1-\bar\alpha)/\bar\alpha$, and then for the
 *same* $x_0$ and the *same* $\varepsilon$ the VP state is exactly
-$\sqrt{\bar\alpha}$ times the VE state — pathwise, not in distribution.
+$\sqrt{\bar\alpha}$ times the VE state, pathwise, not in distribution.
 Deriving DDPM's ancestral update in $\bar\alpha$ and $\beta$ and substituting,
 $\beta_i/\bar\alpha_i = \sigma_i^2 - \sigma_{i-1}^2$ and
 $\tilde\beta_i = \bar\alpha_{i-1}\,\sigma_{i-1}^2(\sigma_i^2 -
@@ -464,7 +464,7 @@ the two samplers are the same chain.
 a claim about the algebra and not about an implementation. Driven with
 identical noise draws the two trajectories agree to $10^{-11}$ in float64
 (`tests/test_vp.py`) and to $2\times10^{-4}$ on states of size 5.2 in the
-experiment's float32 — rounding, not a difference. **So the choice of process
+experiment's float32: rounding, not a difference. **So the choice of process
 is not a modelling choice**, and everything this repo measured under VE
 transfers.
 
@@ -479,7 +479,7 @@ from. For data of per-coordinate variance $v$:
 | VP | $N(0,I)$ | $1 + \bar\alpha_{\max}(v-1)$ | **1.000** |
 
 That is the whole content of "variance preserving": not a better process, a
-convention that is exact on standardized data. It is also *only* that — on this
+convention that is exact on standardized data. It is also *only* that: on this
 repo's own ring target, whose per-coordinate variance is
 $r^2/2 + s^2 = 8.16$ and was never standardized, VP's prior ratio at
 $\sigma_{\max}=2$ is 0.411 against VE's 0.329. Both badly wrong, one slightly
@@ -502,7 +502,7 @@ variance is 20% short. A 20%-wrong prior variance is invisible after 200 levels.
 
 The closed-form accounting on a Gaussian says why. The two priors differ by
 exactly 1.0 of variance, and that difference reaches the output multiplied by
-the chain's contraction — the same multiplier whatever the ladder does, since
+the chain's contraction, the same multiplier whatever the ladder does, since
 it does not depend on where the chain started:
 
 | unit Gaussian | 8 levels | 64 | 256 |
@@ -514,7 +514,7 @@ it does not depend on where the chain started:
 
 The prior is worth 2.5% of the ladder error at $\sigma_{\max}=3$ and 8 levels,
 0.05% at $\sigma_{\max}=8$. It only becomes comparable at $\sigma_{\max}=3$ with
-256 levels (55%) — a short top of ladder *and* a very fine one, which is not a
+256 levels (55%), a short top of ladder *and* a very fine one, which is not a
 configuration anyone reaches by accident.
 
 The honest summary is that the VP/VE distinction, as a distinction between
@@ -542,7 +542,7 @@ in VP, so:
 | VP, $v = 1$ | 1.000 → 1.000 | **1.00x** |
 
 **VP inputs are $O(1)$ at every level only on standardized data.** Off it the
-span is the same size, pointed the other way — which is not what the argument
+span is the same size, pointed the other way, which is not what the argument
 says, and is why the experiment runs both targets.
 
 The comparison itself is unusually tight, because of the pathwise identity
@@ -565,8 +565,8 @@ scored as relative score MSE on 13 levels
 That aggregate is 41–47% *one level*: the error at the finest $\sigma$ is 44x
 the error at the coarsest, so a mean over the ladder is very nearly the error
 at $\sigma_{\min}$, where the two coordinate systems are identical
-($\bar\alpha \to 1$). Weighting every level equally instead — the per-seed
-geometric mean of the per-level ratio — is what the question actually asks:
+($\bar\alpha \to 1$). Weighting every level equally instead (the per-seed
+geometric mean of the per-level ratio) is what the question actually asks:
 
 | target, ladder | VP/VE over the ladder | VP wins | at the coarsest level | VP wins |
 | --- | ---: | ---: | ---: | ---: |
@@ -576,16 +576,16 @@ geometric mean of the per-level ratio — is what the question actually asks:
 | ring, shallow | 0.95x | 3/5 | 0.85x | 3/5 |
 
 **So VP helps, and not for the stated reason.** Standardizing the data takes
-VP's input span from 2.71x to exactly 1.00x — the $O(1)$ ideal the argument is
-about — and it is where VP helps *least* of the three deep cells; at the
+VP's input span from 2.71x to exactly 1.00x, the $O(1)$ ideal the argument is
+about, and it is where VP helps *least* of the three deep cells; at the
 coarsest level the two targets are indistinguishable (0.54 against 0.53) across
 an 8.2x change in $v$. Cutting the ladder from 160x to 16x with the coarse end
 untouched does nothing either. Both hypotheses the design was built around are
 refuted by their own controls.
 
 What is left is the noise level. The gain is concentrated above
-$\sigma \approx \mathrm{sd}(x_0)$ — below it the four cells run 0.92–0.99x,
-which at five paired seeds is at most a few percent and mostly nothing — and
+$\sigma \approx \mathrm{sd}(x_0)$ (below it the four cells run 0.92–0.99x,
+which at five paired seeds is at most a few percent and mostly nothing), and
 that region is also the tempting place to stop a ladder. The shallow cell, the
 only one that stops before it, is the only one without the effect, and it is
 not a different regime: it never gets there. Scoring every cell on the band
@@ -609,7 +609,7 @@ The mechanism this is consistent with is in the closed form and is not
 separately tested: at the top of the ladder the VP input is
 $\sqrt{\bar\alpha}x_0 + \sqrt{1-\bar\alpha}\,\varepsilon$, so *copying the
 input* predicts $\varepsilon$ with relative error
-$\bar\alpha v = v/(1+\sigma_{\max}^2) = 0.126$ — the rescaling hands the VP
+$\bar\alpha v = v/(1+\sigma_{\max}^2) = 0.126$; the rescaling hands the VP
 network most of its own regression target for free, where the VE network has to
 divide by $\sigma_{\max}$ first. That identity is measured against a sample
 (`test_top_of_ladder_snr_is_the_vp_identity_maps_error`); that it is *why* VP
@@ -638,7 +638,7 @@ learned:
 $$s_w(x,\sigma) = (1+w)\,\nabla\log p_\sigma(x\mid y{=}k) - w\,\nabla\log p_\sigma(x).$$
 
 That score is the gradient of $r_{w,\sigma} \propto p_\sigma(x\mid
-y{=}k)^{1+w}\,p_\sigma(x)^{-w}$ — checked by finite differences, not asserted —
+y{=}k)^{1+w}\,p_\sigma(x)^{-w}$ (checked by finite differences, not asserted),
 and at $\sigma = 0$ it is $q_w \propto p(x\mid y{=}k)^{1+w} p(x)^{-w}$, the
 sharpened conditional guidance is usually said to target. $q_w$ is available by
 2-D quadrature, so "does guidance sample from $q_w$?" is a measurement.
@@ -646,7 +646,7 @@ Everything below runs both of this repo's samplers on the *same* guided scores,
 against exact draws from $q_w$, with the sliced-$W_2$ between two independent
 such draws as the floor.
 
-**First, the target does not move — which is a negative about guidance, not
+**First, the target does not move, which is a negative about guidance, not
 about the samplers.** Sliced $W_2$ between $q_w$ and $q_0$ is 0.0028, 0.0029,
 0.0033, 0.0038 at $w = 0.5, 1, 2, 4$, against a floor of 0.012–0.014. On a ring
 whose modes sit 7.7 component standard deviations apart, $p(x) \approx
@@ -671,7 +671,7 @@ target that isn't moving:
 The one-pass sampler drifts away from $q_w$ monotonically; annealed Langevin
 does not, at any weight. And the Langevin arm's residual 1.3× is its budget, not
 a bias: doubling the steps per level at $w=4$ takes it from 0.0153 to **0.0116,
-below the 0.0121 floor** — indistinguishable from two exact draws.
+below the 0.0121 floor**, indistinguishable from two exact draws.
 
 **Why**, and it is the same sentence this repo has now written three times. The
 family $r_{w,\sigma}$ is *not* the noising path of $q_w$: tilting and convolving
@@ -694,7 +694,7 @@ early overshoot; a single pass carries part of it to the end.
 read-outs that were supposed to show it, and do not:
 
 - *Purity* (fraction of draws nearest component $k$) is **1.0000 at every
-  weight, including $w=0$** — saturated by the separation, so it cannot
+  weight, including $w=0$**: saturated by the separation, so it cannot
   distinguish anything here. Reported because it is the number a reader would
   expect to see, and it is uninformative.
 - *Width* is non-monotone and small: the ancestral rms distance from $\mu_k$
@@ -702,22 +702,22 @@ read-outs that were supposed to show it, and do not:
   0.399. A 5% dip that comes back is not a collapse.
 
 What actually moves is the **radial position**. The ancestral mean sits at
-$-0.012$ from $\mu_k$ at $w=0$ — the same size as $q_w$'s own $+0.007$, i.e.
-nothing — and at $+0.181$ by $w=4$: 0.45 of a component standard deviation,
+$-0.012$ from $\mu_k$ at $w=0$ (the same size as $q_w$'s own $+0.007$, i.e.
+nothing) and at $+0.181$ by $w=4$: 0.45 of a component standard deviation,
 straight outward along the ray the mechanism above predicts. Anchoring at $w=1$
 and extending the ancestral arm past the sweep:
 
 | $w$ | 0.5 | 1 | 2 | 4 | 8 | 16 |
 |---|---|---|---|---|---|---|
 | radial offset | 0.0449 | 0.0782 | 0.1231 | 0.1809 | 0.2520 | 0.3346 |
-| $\log(1+w)$ law | 0.0457 | — | 0.1239 | 0.1815 | 0.2478 | 0.3195 |
-| ratio | 0.98 | — | 0.99 | 1.00 | 1.02 | 1.05 |
+| $\log(1+w)$ law | 0.0457 | - | 0.1239 | 0.1815 | 0.2478 | 0.3195 |
+| ratio | 0.98 | - | 0.99 | 1.00 | 1.02 | 1.05 |
 
 Within 2% out to $w=8$ and 5% at $w=16$, from a single anchor across a 32×
 range. **The log law is fitted, not derived**, and the honest version of that
 caveat is that integrating the attractor above uniformly over the ladder gives
 $\frac{1+w}{w}\log(1+w) - 1$, which has the right leading logarithm and
-over-predicts by 22% at $w=16$ — so the ladder's weighting is not uniform, and
+over-predicts by 22% at $w=16$, so the ladder's weighting is not uniform, and
 what is established is the mechanism and the measurements, not the exponent.
 
 ### The other half: what guidance does once the components overlap
@@ -735,8 +735,8 @@ scores, $q_w$ up to the same 2-D quadrature, and draws from it, with the
 distance between two independent draws as the floor.
 
 **The controlling variable is one scalar, and it is not a property of the
-sampler.** For a mixture, $p(x\mid k)/p(x) = r_k(x)/w_k$ exactly — the
-posterior responsibility — so
+sampler.** For a mixture, $p(x\mid k)/p(x) = r_k(x)/w_k$ exactly (the
+posterior responsibility), so
 
 $$\log q_w(x) - \log q_0(x) = w\big(\log r_k(x) - \log w_k\big) + \text{const},$$
 
@@ -756,7 +756,7 @@ At 7.65 sd every weight lands within 1.05× the floor: guidance is not weak
 there, it is **absent**. One implementation note that is a trap rather than a
 detail: `responsibilities().log()` cannot be used to compute this, because on
 the default ring the off-component responsibilities are below float32's
-smallest normal and the linear form returns exact zeros — on precisely the rows
+smallest normal and the linear form returns exact zeros, on precisely the rows
 that establish the separated regime. `log_responsibilities` (a `log_softmax`)
 is accurate there and is what `log_tilt` uses.
 
@@ -778,13 +778,13 @@ both in component sd:
 
 The displacement grows without apparent bound and is monotone in $w$ at every
 separation, reaching **0.90 component sd**. The narrowing does not: it bottoms
-out at **0.83 sd** — a 17% reduction — and then **reverses**, so at 1.91 and
+out at **0.83 sd**, a 17% reduction, and then **reverses**, so at 1.91 and
 1.53 sd the spread has an interior minimum in $w$ and the strongest guidance
 tried is *wider* than half of it. So on this target the honest description of
 what the tilt does is that it **moves the conditional away from its
 neighbours** far more than it concentrates it, and past a point more guidance
 buys only displacement. The displacement follows the same $\log(1+w)$ law the
-ancestral drift did, from a $w=1$ anchor — to within 7% in the three most
+ancestral drift did, from a $w=1$ anchor, to within 7% in the three most
 overlapping cells and 11% at 3.83 sd, where the displacement is 0.14 sd and
 there is little to fit. That is a parallel worth naming and not a derivation:
 there the sampler drifted on a target that did not move, here the target itself
@@ -804,9 +804,9 @@ left open in as many words, and
 [`experiments/overlap_samplers.py`](experiments/overlap_samplers.py) closes it:
 the guidance section's three arms, on this section's three widths.
 
-It was open in both directions. Ancestral's drift has a mechanism — a one-pass
+It was open in both directions. Ancestral's drift has a mechanism, a one-pass
 sampler chasing an attractor that sits outside $\mu_k$
-([`guided_stationary_point`](diffusion/guidance.py)) — but at overlap $q_w$ has
+([`guided_stationary_point`](diffusion/guidance.py)), but at overlap $q_w$ has
 itself moved outward by up to 1.80, so a sampler drifting outward might have
 been drifting toward a target that came to meet it.
 
@@ -822,7 +822,7 @@ $q_w$'s, in component sd, so zero is "arrived":
 | 1.53 | 0 | −0.096 | +0.009 | 3.11 | 0.99 |
 | 1.53 | 4 | **+0.659** | +0.009 | 28.0 | 0.80 |
 
-**Annealed Langevin reaches $q_w$ in every cell** — at or below the floor, and
+**Annealed Langevin reaches $q_w$ in every cell**: at or below the floor, and
 within 0.02 component sd of the target's radial position. The reading the
 separated study gave it (it equilibrates at each level, so its output is the
 last level's stationary law) was established where the tilt did nothing; it
@@ -838,7 +838,7 @@ invites a trend the sweep does not have.
 
 *The $w = 0$ row is not a fixed baseline.* With no guidance and no tilt at all,
 ancestral's ordinary discretization error runs 1.85 → 3.00 → 3.11 floors as the
-components widen — the target is simply getting harder. Divide that out and the
+components widen: the target is simply getting harder. Divide that out and the
 guidance-attributable inflation at $w = 4$ is $9.01\times$, $12.42\times$,
 $9.02\times$: essentially flat across a $5\times$ range of separation. So the
 answer to the open question is "yes, and by about the same relative amount",
@@ -867,7 +867,7 @@ one vector-Jacobian product per probe (FFJORD). Probes are drawn **once per
 solve**: resampling them inside the integrator makes the augmented field
 discontinuous in $s$ and silently costs the solver its order. Rademacher probes
 are the default because on a diagonal Jacobian they return the trace exactly,
-where Gaussian probes still carry variance — and at points where one mixture
+where Gaussian probes still carry variance, and at points where one mixture
 component dominates, the noised score's Jacobian *is* exactly isotropic, so that
 is not a hypothetical.
 
@@ -884,7 +884,7 @@ truth to be wrong against. Two errors, separated:
 
 Integration error falls at roughly $h^4$ until it reaches the float32 noise
 floor around $10^{-6}$ (the 81-node point is that floor, not the method's), and
-estimator variance falls as $1/\sqrt{k}$ — but at 41 nodes it is still *four
+estimator variance falls as $1/\sqrt{k}$, but at 41 nodes it is still *four
 orders of magnitude above* the integration error (0.111 nats at 32 probes
 against 1.1e-5). At $d = 2$ the exact trace costs two
 backward passes and the estimator costs accuracy, so the honest conclusion is
@@ -907,7 +907,7 @@ which cannot be negative. 2,000 draws, 41 nodes, exact divergence:
 The first row is the method's own zero: that flow reproduces the target
 exactly, so whatever it reports is the error bar on the other two. Against it,
 starting the sampler from a Gaussian instead of $p_{\sigma_{\max}}$ costs
-0.0089 nats and the score being learned costs a further 0.0585 — the estimation
+0.0089 nats and the score being learned costs a further 0.0585: the estimation
 error is about seven times the prior gap. Both were visible in the sample
 metrics only as "somewhere inside the floor band"; the likelihood puts a number
 on each, which is the whole reason to compute one.
@@ -922,8 +922,8 @@ is exactly the MALA proposal in
 [mcmc-from-scratch](https://github.com/porth-bot/mcmc-from-scratch) with the
 Metropolis accept step deleted, and the deletion has a price this repo states
 rather than hides: MALA is exact at any step size, ULA is biased by $O(\tau)$.
-On a standard Gaussian that bias is closed-form — ULA's stationary variance is
-$1/(1-\tau/4)$, 6.7% too wide at $\tau = 0.25$ — and
+On a standard Gaussian that bias is closed-form (ULA's stationary variance is
+$1/(1-\tau/4)$, 6.7% too wide at $\tau = 0.25$), and
 [`tests/test_langevin.py`](tests/test_langevin.py) measures it. The reason to
 accept the bias is not speed: a learned score gives no $\log p$ to put in a
 Metropolis ratio, so the accept step is unavailable in principle.
@@ -939,8 +939,8 @@ pip install -r requirements.txt && pip install -e .
 ./reproduce.sh                  # 361 tests, then all 14 figures: 2-3 min
 ```
 
-Running this repo end to end is about an hour of CPU — the sampler sweep alone
-draws 16,000 samples per arm across eight arms and six ladder refinements — so
+Running this repo end to end is about an hour of CPU (the sampler sweep alone
+draws 16,000 samples per arm across eight arms and six ladder refinements), so
 the artifacts ship with it: CSV sweeps and JSON summaries in `logs/`, the
 trained score network in `logs/score_net.pt`, and the sample tensors the cloud
 figures are pictures of. The split matters: a figure of a *number* rebuilds
@@ -949,22 +949,22 @@ actual draws and of the network itself, and only the tensors and the weights
 reproduce those. Each experiment takes `--figures` to replay its own.
 
 Two test modules keep the write-up honest rather than aspirational.
-`tests/test_readme_numbers.py` recomputes every table above — and the prose
-numbers the sections argue from — out of `logs/`, at the precision the README
+`tests/test_readme_numbers.py` recomputes every table above (and the prose
+numbers the sections argue from) out of `logs/`, at the precision the README
 prints, so a number that drifts from the sweep it summarizes fails the suite
 instead of ageing quietly. It found seven on the day it was written.
 
 `tests/test_reproduction.py` covers the other half: every artifact the replay
 reads must be **tracked by git** (sitting in the working tree is not the same
 thing), and the committed weights
-must still load into the `ScoreNet` the code builds today — a break that
+must still load into the `ScoreNet` the code builds today, a break that
 retraining would silently paper over, since training rewrites the file it
 would have failed on.
 
 `requirements.txt` pins the exact versions the committed artifacts were
 produced with (Python 3.12.13, torch 2.13.0); `pyproject.toml` keeps lower
 bounds, which is what CI installs on 3.10 and 3.12. The replay is pure
-post-processing and is therefore exact — rerunning it leaves the working tree
+post-processing and is therefore exact: rerunning it leaves the working tree
 clean. Recomputation is seeded and replays on the same torch build, but torch
 guarantees no bitwise determinism across versions or hardware, which is why
 the artifacts are committed rather than regenerated on demand.
@@ -991,9 +991,9 @@ python experiments/overlap_samplers.py # ~20 min  the same overlap, with the sam
   quality on real data, and none of these networks (87k parameters, four
   layers) would be a reasonable model of anything larger. What transfers is
   the machinery and the way of checking it.
-- **One trained network.** The score-estimation numbers — the error tables,
+- **One trained network.** The score-estimation numbers (the error tables,
   the learned-score rows in every sampler comparison, the 0.0585-nat
-  likelihood gap — come from a single training run (seed 0, 60k steps). The
+  likelihood gap) come from a single training run (seed 0, 60k steps). The
   sampler and schedule comparisons vary the sampler and the ladder against
   that fixed network, which is the right control for *those* questions, but
   none of the learned-score numbers carries a training-seed error bar. The
@@ -1004,21 +1004,21 @@ python experiments/overlap_samplers.py # ~20 min  the same overlap, with the sam
 - **The shipped network has no EMA, and it should.** `logs/score_net.pt` is
   raw weights from a single 60k-step run, because it was trained before
   `diffusion/ema.py` existed. The ablation says averaging would cut its score
-  error several-fold at no training cost — so every learned-score number here
+  error several-fold at no training cost, so every learned-score number here
   is a floor on what this architecture and budget can do, not the best of it.
   Retraining and re-deriving the downstream sampler and likelihood numbers is
   a bigger change than adding the ablation was, and it has not been done.
 - **`TwoMoons` is a tested density, not an experimental target.** It is a
   genuinely normalized density in polar coordinates with an analytic score,
-  and it is checked against the finite-difference oracle — but it is not
+  and it is checked against the finite-difference oracle, but it is not
   closed under noising, so it cannot supply ground truth at intermediate
   levels, which is what every experiment here needs. The experiments all run
   on the ring mixture for that reason.
-- **Guidance's overlapping regime is measured, samplers included — and what is
+- **Guidance's overlapping regime is measured, samplers included, and what is
   left is the weight range.** Widening the components until the responsibility
   varies makes the tilt bite ([`experiments/overlap.py`](experiments/overlap.py)),
-  and what it does is displace the conditional — up to 0.90 component sd,
-  monotone in $w$ — far more than it narrows it (17% at best, then reversing).
+  and what it does is displace the conditional (up to 0.90 component sd,
+  monotone in $w$) far more than it narrows it (17% at best, then reversing).
   The sampler half is now run too
   ([`experiments/overlap_samplers.py`](experiments/overlap_samplers.py)):
   ancestral still overshoots $q_w$ there, by 0.44–0.77 component sd at $w = 4$,
@@ -1050,8 +1050,8 @@ python experiments/overlap_samplers.py # ~20 min  the same overlap, with the sam
   the arithmetic, not the method.
 - **Variance-exploding only, and now measured to be enough.** The forward
   process here has no drift. Variance-preserving turned out to be a change of
-  variables *exactly* -- same chain, pathwise
-  ([`diffusion/vp.py`](diffusion/vp.py)) -- and training a network in VP
+  variables *exactly*, same chain, pathwise
+  ([`diffusion/vp.py`](diffusion/vp.py)), and training a network in VP
   coordinates, which is where the O(1)-input argument lives, is worth 0.68-0.78x
   the score error above $\sigma \approx \mathrm{sd}(x_0)$ and little or
   nothing below it, for a reason that is not the O(1)-input argument (that premise holds only
@@ -1083,8 +1083,8 @@ rather than buried.
 
 | Repo | Built from scratch |
 | --- | --- |
-| **diffusion-from-scratch** *(this repo)* | Score matching, reverse-time samplers, and the probability-flow ODE — against exact scores at every noise level |
-| [mcmc-from-scratch](https://github.com/porth-bot/mcmc-from-scratch) | Metropolis-Hastings, Gibbs, HMC, MALA, NUTS, parallel tempering — validated against exact posteriors |
+| **diffusion-from-scratch** *(this repo)* | Score matching, reverse-time samplers, and the probability-flow ODE, against exact scores at every noise level |
+| [mcmc-from-scratch](https://github.com/porth-bot/mcmc-from-scratch) | Metropolis-Hastings, Gibbs, HMC, MALA, NUTS, parallel tempering, validated against exact posteriors |
 | [gp-from-scratch](https://github.com/porth-bot/gp-from-scratch) | GP regression, kernels with hand-derived gradients, ML-II, and the NTK/NNGP wide-network correspondence |
 | [pinn-from-scratch](https://github.com/porth-bot/pinn-from-scratch) | Physics-informed networks: exact autograd PDE residuals against closed-form solutions |
 | [grokking-transformer](https://github.com/porth-bot/grokking-transformer) | A transformer that groks modular arithmetic, and the Fourier circuit it learns |
@@ -1095,14 +1095,14 @@ proposal with the accept step deleted, the deletion is forced (a learned score
 gives no density to put in a Metropolis ratio), and both repos measure the
 same closed-form ULA bias. The annealing that makes the biased sampler work is
 the same idea as its parallel tempering, applied to noise levels instead of
-temperatures — and the failure it fixes, a chain trapped in one mode, is
+temperatures, and the failure it fixes, a chain trapped in one mode, is
 measured on both sides.
 
 ## Provenance
 
 A from-scratch study resource for learning how score-based generative models
-work. Every derivation is written out — in the module docstrings and, at
-length, in [`theory/derivations.md`](theory/derivations.md) — and every
+work. Every derivation is written out (in the module docstrings and, at
+length, in [`theory/derivations.md`](theory/derivations.md)), and every
 non-obvious claim is tested against a closed-form or independently computed
 ground truth rather than taken on faith.
 
@@ -1111,4 +1111,4 @@ ground truth rather than taken on faith.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).
