@@ -11,7 +11,7 @@ of $x_0 + \sigma\varepsilon$ with $\varepsilon \sim N(0, I)$, $s_\sigma(x) =
 \nabla_x \log p_\sigma(x)$ its score, and $s_\theta(x, \sigma)$ the network's
 estimate of it. Points are $d$-dimensional ($d = 2$ everywhere in this repo),
 $\tau$ is a Langevin step size, and a *ladder* is a decreasing sequence
-$\sigma_L > \dots > \sigma_1 > 0$ — coarse first, because that is the order the
+$\sigma_L > \dots > \sigma_1 > 0$, coarse first, because that is the order the
 samplers walk it.
 
 Everything here that can be checked is checked numerically somewhere in
@@ -61,7 +61,7 @@ halves of this repo (Sec. 6, Sec. 4, Sec. 5 respectively):
 
 So a diffusion model is, in the end, an estimate of one vector field. Which
 raises the question the whole repo is organized around: *how do you know the
-estimate is any good?* On images you cannot know — there is no ground-truth
+estimate is any good?* On images you cannot know: there is no ground-truth
 score to compare against, so the field is judged by looking at its samples.
 On a 2D Gaussian mixture you can, at every noise level, in closed form. That
 is what Sec. 2 sets up and what every measured claim in the README leans on.
@@ -120,7 +120,7 @@ consequences the implementation depends on:
 
 For Gaussian components, $\log N(x; \mu, \Sigma) = -\tfrac12[d\log 2\pi +
 \log\det\Sigma + (x-\mu)^\top \Sigma^{-1}(x-\mu)]$, and differentiating the
-quadratic form gives $\nabla \log N = -\Sigma^{-1}(x - \mu)$ — a linear pull
+quadratic form gives $\nabla \log N = -\Sigma^{-1}(x - \mu)$, a linear pull
 toward the mean along the precision-weighted direction. Hence
 
 $$s(x) = -\sum_k r_k(x)\, \Sigma_k^{-1}(x - \mu_k).$$
@@ -130,7 +130,7 @@ Everything is computed from one Cholesky factor per component: $\log\det\Sigma
 triangular solve, which is cheaper and better conditioned than forming
 $\Sigma^{-1}$.
 
-### 2.2 Closure under noising — the property everything rests on
+### 2.2 Closure under noising: the property everything rests on
 
 Let $p_\sigma := p_0 * N(0, \sigma^2 I)$, the density of $x_0 + \sigma
 \varepsilon$. For a single Gaussian, the sum of independent Gaussians is
@@ -150,7 +150,7 @@ the same code, by one substitution $\Sigma_k \mapsto \Sigma_k + \sigma^2 I$
 
 $$s_\sigma(x) = -\sum_k r_k^\sigma(x)\,(\Sigma_k + \sigma^2 I)^{-1}(x - \mu_k),$$
 
-with responsibilities recomputed from the inflated components — note that the
+with responsibilities recomputed from the inflated components; note that the
 weights *shift* with $\sigma$ even though the mixing proportions do not, which
 is exactly the smearing-together of the modes that annealing exploits.
 
@@ -164,7 +164,7 @@ and not a shortcut.
 
 The honest counterpart is `TwoMoons`, built as a normalized density in polar
 coordinates rather than as a sampling recipe. Its score is analytic at
-$\sigma = 0$ but it is **not** closed under noising — the $\sigma$-noised
+$\sigma = 0$ but it is **not** closed under noising: the $\sigma$-noised
 crescent is a convolution with no elementary form. The division of labour is
 deliberate: the mixture is where methods are validated against truth, the
 moons are where they are shown to work on something whose noised marginals
@@ -200,7 +200,7 @@ $$\nabla s_\sigma(x) = \frac{\nabla m(x) - I}{\sigma^2} = \frac{1}{\sigma^2}\Big
 since a covariance matrix is positive semidefinite. **For any base density
 whatsoever**, the Jacobian of the $\sigma$-noised score is bounded below by
 $-I/\sigma^2$. Noising bounds curvature, uniformly, with no assumption on the
-data — and Sec. 6.3 turns that into a step-size bound the code enforces.
+data, and Sec. 6.3 turns that into a step-size bound the code enforces.
 
 ---
 
@@ -213,8 +213,8 @@ The thing we want is small:
 $$J_{\mathrm{ESM}}(\theta) = \tfrac12\,\mathbb{E}_{p_\sigma(x)}\big\|s_\theta(x) - \nabla \log p_\sigma(x)\big\|^2 . \tag{ESM}$$
 
 It names $\nabla \log p_\sigma$, which is exactly the unknown. (This repo can
-*evaluate* it for the mixture — Sec. 2.2, and `dsm.explicit_score_matching_loss`
-does — but a method that needs it is not a method. It exists here only to check
+*evaluate* it for the mixture, Sec. 2.2, and `dsm.explicit_score_matching_loss`
+does, but a method that needs it is not a method. It exists here only to check
 the claim of Sec. 3.3.)
 
 ### 3.2 Hyvärinen's identity: integrate the cross term by parts
@@ -235,7 +235,7 @@ $p_\sigma$). Hence **Hyvärinen's identity**:
 
 $$J_{\mathrm{ESM}}(\theta) = \mathbb{E}_{p_\sigma}\Big[\ \nabla\!\cdot\! s_\theta(x) + \tfrac12 \|s_\theta(x)\|^2\ \Big] + C .$$
 
-This is exact and mentions no $p_\sigma$ — only expectations under it, which
+This is exact and mentions no $p_\sigma$, only expectations under it, which
 samples supply. It is also expensive: $\nabla\!\cdot\!s_\theta =
 \mathrm{tr}(\nabla s_\theta)$ costs $d$ extra backward passes per training
 step (the same trace that reappears in Sec. 5.4, where a stochastic estimator
@@ -256,13 +256,13 @@ $$J_{\mathrm{DSM}}(\theta) = \tfrac12\,\mathbb{E}_{p_0(x_0)\,q_\sigma(x\mid x_0)
 $C'$ independent of $\theta$. Same minimizer, same gradient.
 
 *Proof.* Expand both squares. The $\|s_\theta(x)\|^2$ terms agree, because $x$
-is a draw from $p_\sigma$ under either expectation — that is precisely what
+is a draw from $p_\sigma$ under either expectation: that is precisely what
 the construction above guarantees. The remaining squared terms contain no
 $\theta$. So only the cross terms need matching. For ESM, as in Sec. 3.2,
 
 $$\mathbb{E}_{p_\sigma}\big[\langle s_\theta, \nabla\log p_\sigma\rangle\big] = \int \langle s_\theta(x), \nabla_x p_\sigma(x)\rangle\, dx .$$
 
-The density cancelled — that is the one step that matters. Now push the
+The density cancelled: that is the one step that matters. Now push the
 gradient through the definition of $p_\sigma$:
 
 $$\nabla_x p_\sigma(x) = \int p_0(x_0)\, \nabla_x q_\sigma(x\mid x_0)\, dx_0 ,$$
@@ -281,7 +281,7 @@ free:
 
 $$\nabla_x \log q_\sigma(x\mid x_0) = -\frac{x - x_0}{\sigma^2} = -\frac{\varepsilon}{\sigma}.$$
 
-The regression target is the **negated normalized noise** — known exactly, at
+The regression target is the **negated normalized noise**, known exactly, at
 no cost, because we drew it. DSM is literally "predict the noise you added".
 
 The name is the interpretation. The minimizer of a squared error is a
@@ -304,7 +304,7 @@ $$L(\theta) = \mathbb{E}_{\sigma \sim q(\sigma)}\ \lambda(\sigma)\, J_{\mathrm{D
 
 The target scales as $1/\sigma$, so its square scales as $1/\sigma^2$ and an
 unweighted sum is dominated by the finest level by a factor
-$(\sigma_{\max}/\sigma_{\min})^2$ — four orders of magnitude on this repo's
+$(\sigma_{\max}/\sigma_{\min})^2$, four orders of magnitude on this repo's
 ladder ($0.05$ to $8$). The coarse levels, the ones carrying the global
 structure that annealing depends on, would contribute nothing. The standard
 fix (Song & Ermon 2019) is $\lambda(\sigma) = \sigma^2$, which makes every
@@ -346,7 +346,7 @@ conditional mean, so
 
 $$L^\star(\sigma) = \mathbb{E}\big\|\varepsilon - \mathbb{E}[\varepsilon\mid x]\big\|^2, \qquad \mathbb{E}[\varepsilon \mid x] = \frac{x - \mathbb{E}[x_0\mid x]}{\sigma} = -\sigma\, s_\sigma(x)$$
 
-by Tweedie again — so on this repo's targets the floor is computable exactly
+by Tweedie again, so on this repo's targets the floor is computable exactly
 (`dsm.irreducible_dsm_loss`, `dsm.eval_dsm_floor`). Its two limits are
 counterintuitive and worth stating:
 
@@ -359,7 +359,7 @@ counterintuitive and worth stating:
 So a falling loss curve can mean the network is learning, or merely that the
 batch happened to draw coarse levels. Averaged over the training measure the
 floor here is $1.203$, a well-trained network
-reports $1.212$ and a barely-trained one $1.228$ — while one minibatch's loss
+reports $1.212$ and a barely-trained one $1.228$, while one minibatch's loss
 has a standard deviation of $0.073$, eight times the entire remaining excess.
 That is why the repo reports error against the exact score per level, and why
 the training curve is plotted against this floor rather than against zero.
@@ -376,7 +376,7 @@ The forward process takes data and destroys it into noise. This repo uses the
 $$dx = g(t)\, dw, \qquad g(t)^2 = \frac{d\,[\sigma(t)^2]}{dt},$$
 
 whose solution from $x(0) = x_0$ is $x(t) = x_0 + \sigma(t)\varepsilon$ with
-$\varepsilon \sim N(0,I)$ — so the marginal at time $t$ is exactly the
+$\varepsilon \sim N(0,I)$, so the marginal at time $t$ is exactly the
 $p_{\sigma(t)}$ of Sec. 2.2, and the whole apparatus of noised marginals is
 the SDE's time-marginal family. (The alternative, DDPM's
 variance-*preserving* form, adds a contracting drift so that the variance
@@ -425,7 +425,7 @@ diffusion of the same intensity) and equating:
 
 $$-\nabla\!\cdot\!(\bar f\, p) + \tfrac12 g^2 \Delta p = -\tfrac12 g^2 \Delta p \quad\Longrightarrow\quad \nabla\!\cdot\!(\bar f\, p) = g^2\, \Delta p .$$
 
-Now the identity that makes the score appear — the same one Sec. 5.1 uses:
+Now the identity that makes the score appear, the same one Sec. 5.1 uses:
 
 $$\Delta p = \nabla\!\cdot\!(\nabla p) = \nabla\!\cdot\!\big(p\, \nabla \log p\big).$$
 
@@ -446,7 +446,7 @@ at all, which is the substantive part of the theorem, not of this calculation.
 something has to push it back together, and $\nabla \log p$ is the field that
 points uphill in density. The factor $g^2$ says the push must be exactly as
 strong as the spreading it is undoing. The remaining $g\,d\bar w$ is the same
-noise as forward — reversal does not remove randomness, it adds a drift that
+noise as forward: reversal does not remove randomness, it adds a drift that
 overcomes it.
 
 ### 4.3 The reverse conditional, exactly, on the discrete ladder
@@ -485,14 +485,14 @@ This is DDPM's ancestral sampler (Ho et al. 2020, Eq. 11) written for the
 variance-exploding chain rather than the variance-preserving one; Song et al.
 (2021, App. F) give the same update as the ancestral sampler of the SMLD
 model. Setting $\sigma_{i-1} = 0$ makes the noise term vanish and the mean
-equal $\mathbb{E}[x_0\mid x_i]$ exactly — so the final denoising step is not an
+equal $\mathbb{E}[x_0\mid x_i]$ exactly, so the final denoising step is not an
 extra heuristic, it is the last rung of the ladder.
 
 It is also the Euler discretization of Anderson's SDE in the $\sigma$ clock,
 which is worth checking because it ties Sec. 4.2 to the formula above. With
 $g^2 dt = d(\sigma^2)$, the reverse drift $-g^2 s\,dt$ over a step from
-$\sigma_i$ to $\sigma_{i-1}$ contributes $(\sigma_i^2 - \sigma_{i-1}^2)s$ —
-the mean update exactly — and the diffusion term contributes variance
+$\sigma_i$ to $\sigma_{i-1}$ contributes $(\sigma_i^2 - \sigma_{i-1}^2)s$
+(the mean update exactly), and the diffusion term contributes variance
 $\sigma_i^2 - \sigma_{i-1}^2$, which the exact conditional above discounts by
 the factor $a \le 1$. The two agree to first order in the gap and the exact
 version is the one implemented.
@@ -512,7 +512,7 @@ So **ancestral sampling under-disperses**, by an amount that is second order
 in the gap between adjacent levels ($1 - a \to 0$ as the ladder is refined) and
 that vanishes wherever denoising is nearly deterministic. On a Gaussian target
 the deficit is available in closed form, and `samplers.ddpm_gaussian_variance`
-returns it — which is how the tests assert what the sampler *does* rather than
+returns it, which is how the tests assert what the sampler *does* rather than
 what it should do in the limit: a coarse ladder is expected to come back
 narrow, and it does, by the predicted factor. Applied to one component of the
 mixture it predicts the *within-mode* width to under 1% once the ladder is fine
@@ -522,7 +522,7 @@ the sharpest evidence that the derivation above describes the code.
 ### 4.5 Three sources of error, and how to take them apart
 
 A sample can be wrong for three reasons, and on a target with a known score
-each has an off switch — which is the reason `experiments/sampling.py` exists
+each has an off switch, which is the reason `experiments/sampling.py` exists
 in the form it does:
 
 1. **Prior mismatch.** The chain starts from $N(0,\sigma_{\max}^2 I)$, but the
@@ -560,7 +560,7 @@ has these same marginals: $\lambda = 1$ is Anderson's reverse SDE (Sec. 4.2)
 and $\lambda = 0$ is the probability-flow ODE, and the difference between them
 is a Langevin term at the current noise level, which leaves $p_\sigma$
 invariant by Sec. 6.1. That is the precise version of "the stochastic sampler
-is the deterministic one plus noise that does nothing" — in *exact*
+is the deterministic one plus noise that does nothing", in *exact*
 arithmetic. In inexact arithmetic it does two opposite things: it
 re-randomizes, so errors made at coarse levels can be forgotten (which is why
 the stochastic sampler is often more forgiving of a bad score), and it adds
@@ -576,13 +576,13 @@ $$\frac{dx}{d\sigma} = \frac{dx/dt}{d\sigma/dt} = \frac{-\tfrac12 \big(2\sigma \
 
 **The schedule has vanished.** Every VE noise schedule is a reparameterization
 of this one trajectory, so the only thing a schedule can change is *where the
-integration nodes are placed* — which is a property of the solver, not of the
+integration nodes are placed*, which is a property of the solver, not of the
 model (Karras et al. 2022 make the same point). Every function in
 `diffusion/ode.py` therefore takes a ladder of $\sigma$ values and treats it as
-a set of nodes. `diffusion/langevin.py` builds three of them — uniform in
+a set of nodes. `diffusion/langevin.py` builds three of them (uniform in
 $\log\sigma$ (geometric), in $\sigma$ (linear), and in $\arctan\sigma$, which is
 Nichol & Dhariwal's cosine schedule rewritten for a variance-exploding process
-via $\sigma^2 = (1-\bar\alpha)/\bar\alpha$ — and
+via $\sigma^2 = (1-\bar\alpha)/\bar\alpha$), and
 `experiments/schedules.py` runs all three through both samplers. The claim
 survives contact: past 41 score evaluations the three PF-ODE arms agree to four
 decimals. The ancestral sampler keeps a schedule dependence at every budget
@@ -604,7 +604,7 @@ Two consequences worth stating because they are checkable:
 - **One Euler step of the ODE is half the ancestral mean update.** From
   $\sigma_i$ to $\sigma_{i-1}$ it is $\sigma_i(\sigma_i - \sigma_{i-1})s$
   against $(\sigma_i^2 - \sigma_{i-1}^2)s = (\sigma_i - \sigma_{i-1})(\sigma_i
-  + \sigma_{i-1})s$ — a factor of about 2 for adjacent levels. That is the
+  + \sigma_{i-1})s$, a factor of about 2 for adjacent levels. That is the
   $\lambda$ family of Sec. 5.1 seen one step at a time, and
   `tests/test_ode.py` pins it.
 
@@ -635,7 +635,7 @@ and with $v = -\sigma s$ the divergence is $-\sigma\,\mathrm{tr}(\nabla s)$.
 
 ### 5.4 The trace, and Hutchinson's estimator
 
-The trace is the expensive part — $d$ backward passes. Hutchinson's (1989)
+The trace is the expensive part: $d$ backward passes. Hutchinson's (1989)
 estimator replaces it with
 
 $$\mathrm{tr}(A) = \mathbb{E}_\varepsilon\big[\varepsilon^\top A\, \varepsilon\big] \quad\text{for any } \varepsilon \text{ with } \mathbb{E}[\varepsilon\varepsilon^\top] = I,$$
@@ -654,7 +654,7 @@ role). Two details that matter in practice and are both enforced in the code:
    a mean log-likelihood is fine; exponentiating a single estimate is not.
    Rademacher probes are the default: for a diagonal Jacobian every
    $\varepsilon_i^2 = 1$ so the trace comes back *exactly*, where Gaussian
-   probes still carry variance from the diagonal — and at points where one
+   probes still carry variance from the diagonal, and at points where one
    mixture component dominates, the noised score's Jacobian **is** isotropic,
    so this is not hypothetical.
 
@@ -663,7 +663,7 @@ ground truth. Run on the exact score, `ode.pf_ode_log_prob` must reproduce
 $\log p_{\sigma_{\min}}$ to integration error. Run on the *learned* score it is
 a genuine normalized model density $q$, so averaging $\log p - \log q$ over
 exact draws is a Monte Carlo estimate of $\mathrm{KL}(p_{\sigma_{\min}} \| q)
-\ge 0$ — a number in nats for an error the two-sample metrics could only place
+\ge 0$, a number in nats for an error the two-sample metrics could only place
 "somewhere inside the floor band".
 
 ---
@@ -676,7 +676,7 @@ The overdamped Langevin SDE
 
 $$dX_t = \nabla \log p(X_t)\, dt + \sqrt2\, dW_t$$
 
-has $p$ as its stationary distribution — check it against (FP): with $f =
+has $p$ as its stationary distribution; check it against (FP): with $f =
 \nabla\log p$ and $g = \sqrt2$, $\partial_t p = -\nabla\!\cdot\!(p\nabla\log
 p) + \Delta p = -\Delta p + \Delta p = 0$, using the same identity as Sec. 4.2.
 Nothing in that statement mentions $p$ itself, only its score, which is fact
@@ -710,7 +710,7 @@ So why accept the bias? Because in a diffusion model **the density is not
 available**. A learned network gives $s_\theta(x,\sigma)$ and no $\log p$, so
 there is nothing to put in a Metropolis ratio: the accept step is not skipped
 for speed, it is unavailable in principle. That is the honest framing of the
-trade — score-based sampling gives up MALA's exactness to be able to run at
+trade: score-based sampling gives up MALA's exactness to be able to run at
 all on a target known only through its score.
 
 ### 6.2 Annealing, and the step-size schedule it forces
@@ -720,8 +720,8 @@ $e^{-\Delta}$ event per attempt, and this repo's bimodal target has $\Delta =
 (\text{sep}/2/\text{std})^2/2 = 36$, so a single chain never leaves its mode.
 Song & Ermon's (2019) fix is to run ULA down the ladder of *noised* targets
 $p_{\sigma_L}, \dots, p_{\sigma_1}$, carrying the state forward. At large
-$\sigma$ the noised density is nearly unimodal — Sec. 2.2's inflated
-covariances have smeared the modes into each other — so the chain moves
+$\sigma$ the noised density is nearly unimodal (Sec. 2.2's inflated
+covariances have smeared the modes into each other), so the chain moves
 globally and settles the coarse structure; as $\sigma$ shrinks the target
 sharpens back toward $p_0$ and the chain refines locally. **The mixing problem
 is solved at the scale where it is easy, and the answer is carried down.**
@@ -742,7 +742,7 @@ component of scale $\sigma_i$ the score is $O(1/\sigma_i)$, so the drift
 $(\tau_i/2)s$ is $O(\tau \sigma_i/\sigma_1^2)$, matching the injected noise
 $\sqrt{\tau_i} = \sqrt\tau\,\sigma_i/\sigma_1$ up to a level-independent
 constant. Without it a single step size is either too small to move at the
-coarse levels or too large to be stable at the fine ones — the same resonance
+coarse levels or too large to be stable at the fine ones, the same resonance
 problem a unit mass matrix has in HMC (mcmc's theory Sec. 4.8), reappearing
 along the noise axis instead of across coordinates.
 
@@ -756,7 +756,7 @@ $\tau|\lambda| < 4$, and since $\lambda \ge -1/\sigma^2$ that holds whenever
 
 $$\tau_i < 4\sigma_i^2, \quad\text{which under the schedule above is}\quad \tau < 4\sigma_1^2$$
 
-— one condition, on the finest level, that makes every level stable. It is the
+one condition, on the finest level, that makes every level stable. It is the
 same $4$ that appears in $V = 1/(1-\tau/4)$ above, which is this statement for
 $N(0,1)$ where $\lambda = -1$ exactly.
 
@@ -765,7 +765,7 @@ failure is otherwise nearly invisible. An unstable ladder does not hand back
 obvious garbage: the coarse levels blow the state up geometrically (to $10^{80}$
 in this repo's own bimodal test) and the fine levels, which are strongly
 contractive, squash it back into range. What comes out looks like plausible
-samples with roughly the right support — but the coarse exploration that was
+samples with roughly the right support, but the coarse exploration that was
 supposed to decide *which mode each chain belongs to* has been destroyed, so
 the mode weights come back wrong. On a symmetric target that is undetectable;
 an asymmetric mixture is a permanent test here because it reads $0.53$ instead
@@ -776,8 +776,8 @@ same test still reads $0.70$.
 
 The two repos share an update, but they are pointed at different questions, and
 one measured result makes the difference concrete. Annealed Langevin with the
-*learned* score gets **worse** with more compute — sliced $W_2$ of $0.274$ at
-200 score evaluations against $0.807$ at 2000 — while the same sampler with the
+*learned* score gets **worse** with more compute (sliced $W_2$ of $0.274$ at
+200 score evaluations against $0.807$ at 2000), while the same sampler with the
 *exact* score does not degrade at all.
 
 This is not a bug and it is not the step size. Langevin converges to the
@@ -785,8 +785,8 @@ stationary distribution *of the score it is handed*, so a biased score has a
 biased stationary law and more steps converge to it harder. In MCMC terms: the
 chain is doing its job perfectly, on the wrong target, and its asymptotic
 guarantee is the mechanism of the failure rather than a defence against it.
-Ancestral sampling (Sec. 4.4) never equilibrates — it visits each level exactly
-once — so the same score error stays a perturbation instead of becoming a
+Ancestral sampling (Sec. 4.4) never equilibrates (it visits each level exactly
+once), so the same score error stays a perturbation instead of becoming a
 limit.
 
 That inverts the usual reading of a compute knob, and it is the sharpest
@@ -811,4 +811,4 @@ instead of a guess.
 - Karras, Aittala, Aila & Laine (2022), "Elucidating the design space of diffusion-based generative models", *NeurIPS* ($\sigma$ as the clock; node placement as a solver choice).
 - Chen, Rubanova, Bettencourt & Duvenaud (2018), "Neural ordinary differential equations", *NeurIPS* (instantaneous change of variables, Sec. 5.3).
 - Hutchinson (1989), *Commun. Statist. Simul. Comput.* 18 (the trace estimator); Grathwohl, Chen, Bettencourt, Sutskever & Duvenaud (2019), "FFJORD", *ICLR* (its use in a continuous flow).
-- Roberts & Tweedie (1996), *Bernoulli* 2 (ULA's bias and MALA's correction — the mcmc-from-scratch side of Sec. 6.1).
+- Roberts & Tweedie (1996), *Bernoulli* 2 (ULA's bias and MALA's correction, the mcmc-from-scratch side of Sec. 6.1).
